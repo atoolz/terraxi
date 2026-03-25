@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -85,7 +86,7 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 
 	eng := discovery.NewEngine(provider, opts.concurrency)
 
-	fmt.Fprintf(os.Stderr, "Discovering %s resources in %s...\n", providerName, opts.region)
+	slog.Info("Starting discovery", "provider", providerName, "region", opts.region)
 
 	result, err := eng.Run(ctx, filter)
 	if err != nil {
@@ -118,7 +119,7 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 		return fmt.Errorf("code generation failed: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "\nGenerated Terraform code in %s/\n", opts.outputDir)
+	slog.Info("Code generation complete", "output", opts.outputDir, "resources", len(result.Resources))
 	return nil
 }
 

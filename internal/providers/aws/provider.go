@@ -3,6 +3,20 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/ahlert/terraxi/internal/codegen"
 	"github.com/ahlert/terraxi/internal/discovery"
@@ -13,6 +27,17 @@ import (
 type Provider struct {
 	region  string
 	profile string
+
+	ec2            EC2API
+	s3             S3API
+	iam            IAMAPI
+	rds            RDSAPI
+	elb            ELBAPI
+	route53        Route53API
+	lambda         LambdaAPI
+	ecs            ECSAPI
+	cloudwatch     CloudWatchAPI
+	cloudwatchlogs CloudWatchLogsAPI
 }
 
 // New creates a new AWS provider.
@@ -20,14 +45,74 @@ func New() *Provider {
 	return &Provider{}
 }
 
+// NewWithClients creates a Provider with pre-built clients (for testing).
+func NewWithClients(region string, opts ...ClientOption) *Provider {
+	p := &Provider{region: region}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
+}
+
+// ClientOption configures a Provider with a specific client (for testing).
+type ClientOption func(*Provider)
+
+func WithEC2(c EC2API) ClientOption             { return func(p *Provider) { p.ec2 = c } }
+func WithS3(c S3API) ClientOption               { return func(p *Provider) { p.s3 = c } }
+func WithIAM(c IAMAPI) ClientOption             { return func(p *Provider) { p.iam = c } }
+func WithRDS(c RDSAPI) ClientOption             { return func(p *Provider) { p.rds = c } }
+func WithELB(c ELBAPI) ClientOption             { return func(p *Provider) { p.elb = c } }
+func WithRoute53(c Route53API) ClientOption     { return func(p *Provider) { p.route53 = c } }
+func WithLambda(c LambdaAPI) ClientOption       { return func(p *Provider) { p.lambda = c } }
+func WithECS(c ECSAPI) ClientOption             { return func(p *Provider) { p.ecs = c } }
+func WithCloudWatch(c CloudWatchAPI) ClientOption { return func(p *Provider) { p.cloudwatch = c } }
+func WithCloudWatchLogs(c CloudWatchLogsAPI) ClientOption {
+	return func(p *Provider) { p.cloudwatchlogs = c }
+}
+
 func (p *Provider) Name() string { return "aws" }
 
-func (p *Provider) Configure(_ context.Context, cfg discovery.ProviderConfig) error {
+func (p *Provider) Configure(ctx context.Context, cfg discovery.ProviderConfig) error {
 	p.region = cfg.Region
 	p.profile = cfg.Profile
 	if p.region == "" {
-		return fmt.Errorf("region is required for AWS provider")
+		return fmt.Errorf("AWS region is required: set --region or AWS_DEFAULT_REGION")
 	}
+
+	var opts []func(*awsconfig.LoadOptions) error
+	opts = append(opts, awsconfig.WithRegion(p.region))
+	if p.profile != "" {
+		opts = append(opts, awsconfig.WithSharedConfigProfile(p.profile))
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS credentials: %w\nEnsure AWS_PROFILE, AWS_ACCESS_KEY_ID, or instance role is configured", err)
+	}
+
+	// Validate credentials early
+	stsClient := sts.NewFromConfig(awsCfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return fmt.Errorf("AWS credential validation failed: %w", err)
+	}
+	slog.Info("AWS credentials validated",
+		"account", *identity.Account,
+		"arn", *identity.Arn,
+		"region", p.region,
+	)
+
+	// Initialize all service clients
+	p.ec2 = ec2.NewFromConfig(awsCfg)
+	p.s3 = s3.NewFromConfig(awsCfg)
+	p.iam = iam.NewFromConfig(awsCfg)
+	p.rds = rds.NewFromConfig(awsCfg)
+	p.elb = elasticloadbalancingv2.NewFromConfig(awsCfg)
+	p.route53 = route53.NewFromConfig(awsCfg)
+	p.lambda = lambda.NewFromConfig(awsCfg)
+	p.ecs = ecs.NewFromConfig(awsCfg)
+	p.cloudwatch = cloudwatch.NewFromConfig(awsCfg)
+	p.cloudwatchlogs = cloudwatchlogs.NewFromConfig(awsCfg)
 
 	// Register service mappings for post-processing (single source of truth)
 	for _, rt := range p.ListResourceTypes() {
@@ -104,10 +189,7 @@ func (p *Provider) Discover(ctx context.Context, resourceType string, filter typ
 type discovererFunc func(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error)
 
 // discoverers maps resource types to their discovery functions.
-var discoverers = map[string]discovererFunc{
-	// Each resource type gets its own discoverer.
-	// Implementations go in separate files (ec2.go, s3.go, iam.go, etc.)
-}
+var discoverers = map[string]discovererFunc{}
 
 // RegisterDiscoverer registers a discovery function for a resource type.
 func RegisterDiscoverer(resourceType string, fn discovererFunc) {

@@ -3,6 +3,7 @@ package codegen
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,7 +125,8 @@ func (g *Generator) writeProvidersFile() error {
 		providerBlock = fmt.Sprintf(`terraform {
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
@@ -138,7 +140,8 @@ provider "aws" {
 		providerBlock = fmt.Sprintf(`terraform {
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
@@ -152,15 +155,30 @@ provider "aws" {
 	return os.WriteFile(filepath.Join(g.outputDir, "providers.tf"), []byte(providerBlock), 0644)
 }
 
+// terraformInitNeeded checks if providers are already downloaded.
+func (g *Generator) terraformInitNeeded() bool {
+	providersDir := filepath.Join(g.outputDir, ".terraform", "providers")
+	info, err := os.Stat(providersDir)
+	if err != nil {
+		return true
+	}
+	return !info.IsDir()
+}
+
 // runImport executes terraform or tofu to generate HCL from import blocks.
 func (g *Generator) runImport(ctx context.Context, configOut string) error {
 	binary := string(g.engine)
 
-	// terraform init first (needed for provider download)
-	initCmd := exec.CommandContext(ctx, binary, "init")
-	initCmd.Dir = g.outputDir
-	if out, err := initCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s init failed: %w\nOutput: %s", binary, err, string(out))
+	// Skip init if providers are already cached
+	if g.terraformInitNeeded() {
+		slog.Info("Running terraform init (downloading provider)...")
+		initCmd := exec.CommandContext(ctx, binary, "init")
+		initCmd.Dir = g.outputDir
+		if out, err := initCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%s init failed: %w\nOutput: %s", binary, err, string(out))
+		}
+	} else {
+		slog.Debug("Skipping terraform init (providers cached)")
 	}
 
 	// terraform plan -generate-config-out
