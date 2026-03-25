@@ -149,8 +149,12 @@ func (p *Provider) ListResourceTypes() []types.ResourceType {
 		{Type: "aws_iam_group", Service: "iam", Description: "IAM groups"},
 		{Type: "aws_iam_instance_profile", Service: "iam", Description: "Instance profiles"},
 
+		// EC2 (additional)
+		{Type: "aws_security_group_rule", Service: "ec2", Description: "Security group rules"},
+
 		// RDS
 		{Type: "aws_db_instance", Service: "rds", Description: "RDS instances"},
+		{Type: "aws_rds_cluster", Service: "rds", Description: "RDS/Aurora clusters"},
 		{Type: "aws_db_subnet_group", Service: "rds", Description: "DB subnet groups"},
 		{Type: "aws_db_parameter_group", Service: "rds", Description: "DB parameter groups"},
 

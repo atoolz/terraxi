@@ -26,6 +26,7 @@ type discoverOpts struct {
 	outputDir   string
 	engine      string
 	structure   string
+	inventory   string
 	dryRun      bool
 	format      string
 	concurrency int
@@ -60,6 +61,7 @@ Examples:
 	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", "./imported", "Output directory for generated files")
 	cmd.Flags().StringVar(&opts.engine, "engine", "terraform", "IaC engine: terraform or tofu")
 	cmd.Flags().StringVar(&opts.structure, "structure", "flat", "Output structure: flat (single dir) or modules (per-service subdirs)")
+	cmd.Flags().StringVar(&opts.inventory, "inventory", "", "Write discovery results as JSON to this file")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Preview what would be discovered without generating code")
 	cmd.Flags().StringVar(&opts.format, "format", "table", "Output format: table or json")
 	cmd.Flags().IntVar(&opts.concurrency, "concurrency", 10, "Max concurrent API calls")
@@ -98,6 +100,21 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 	}
 
 	result.Region = opts.region
+
+	// Write JSON inventory if requested
+	if opts.inventory != "" {
+		invFile, invErr := os.Create(opts.inventory)
+		if invErr != nil {
+			return fmt.Errorf("failed to create inventory file: %w", invErr)
+		}
+		invWriter := output.NewWriter(invFile, output.FormatJSON)
+		if writeErr := invWriter.WriteResult(result); writeErr != nil {
+			_ = invFile.Close()
+			return fmt.Errorf("failed to write inventory: %w", writeErr)
+		}
+		_ = invFile.Close()
+		slog.Info("Inventory written", "path", opts.inventory)
+	}
 
 	if opts.dryRun {
 		return writeDryRunOutput(os.Stdout, result, opts.format)

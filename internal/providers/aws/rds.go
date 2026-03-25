@@ -15,6 +15,7 @@ import (
 
 func init() {
 	RegisterDiscoverer("aws_db_instance", discoverRDSInstances)
+	RegisterDiscoverer("aws_rds_cluster", discoverRDSClusters)
 	RegisterDiscoverer("aws_db_subnet_group", discoverDBSubnetGroups)
 	RegisterDiscoverer("aws_db_parameter_group", discoverDBParameterGroups)
 }
@@ -156,5 +157,65 @@ func discoverDBParameterGroups(ctx context.Context, p *Provider, filter types.Fi
 	}
 
 	slog.Debug("DB parameter groups discovery complete", "count", len(resources))
+	return resources, nil
+}
+
+func discoverRDSClusters(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
+	var resources []types.Resource
+	var marker *string
+
+	for {
+		out, err := p.rds.DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{Marker: marker})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for rds:DescribeDBClusters: %w", err)
+			}
+			return nil, fmt.Errorf("describing RDS clusters: %w", err)
+		}
+
+		for _, cluster := range out.DBClusters {
+			tags := map[string]string{}
+			if cluster.DBClusterArn != nil {
+				tagOut, tagErr := p.rds.ListTagsForResource(ctx, &rds.ListTagsForResourceInput{
+					ResourceName: cluster.DBClusterArn,
+				})
+				if tagErr == nil {
+					tags = rdsTagsToMap(tagOut.TagList)
+				}
+			}
+
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			r := types.Resource{
+				Type:   "aws_rds_cluster",
+				ID:     awsutil.ToString(cluster.DBClusterIdentifier),
+				Name:   awsutil.ToString(cluster.DBClusterIdentifier),
+				Region: p.region,
+				Tags:   tags,
+			}
+
+			if cluster.DBSubnetGroup != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_db_subnet_group", ID: *cluster.DBSubnetGroup,
+				})
+			}
+			for _, sg := range cluster.VpcSecurityGroups {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_security_group", ID: awsutil.ToString(sg.VpcSecurityGroupId),
+				})
+			}
+
+			resources = append(resources, r)
+		}
+
+		if out.Marker == nil {
+			break
+		}
+		marker = out.Marker
+	}
+
+	slog.Debug("RDS clusters discovery complete", "count", len(resources))
 	return resources, nil
 }
