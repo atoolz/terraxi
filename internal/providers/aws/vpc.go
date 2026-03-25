@@ -20,29 +20,37 @@ func init() {
 	RegisterDiscoverer("aws_internet_gateway", discoverInternetGateways)
 }
 
-// DescribeVpcs does not paginate in the AWS API (returns all VPCs at once).
 func discoverVPCs(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeVpcs: %w", err)
-		}
-		return nil, fmt.Errorf("describing VPCs: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, vpc := range out.Vpcs {
-		tags := ec2TagsToMap(vpc.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeVpcs: %w", err)
+			}
+			return nil, fmt.Errorf("describing VPCs: %w", err)
 		}
-		resources = append(resources, types.Resource{
-			Type:   "aws_vpc",
-			ID:     awsutil.ToString(vpc.VpcId),
-			Name:   nameFromEC2Tags(vpc.Tags),
-			Region: p.region,
-			Tags:   tags,
-		})
+
+		for _, vpc := range out.Vpcs {
+			tags := ec2TagsToMap(vpc.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+			resources = append(resources, types.Resource{
+				Type:   "aws_vpc",
+				ID:     awsutil.ToString(vpc.VpcId),
+				Name:   nameFromEC2Tags(vpc.Tags),
+				Region: p.region,
+				Tags:   tags,
+			})
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("VPCs discovery complete", "count", len(resources))
@@ -186,38 +194,46 @@ func discoverNatGateways(ctx context.Context, p *Provider, filter types.Filter) 
 	return resources, nil
 }
 
-// DescribeInternetGateways does not paginate in the AWS API.
 func discoverInternetGateways(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeInternetGateways(ctx, &ec2.DescribeInternetGatewaysInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeInternetGateways: %w", err)
-		}
-		return nil, fmt.Errorf("describing internet gateways: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, igw := range out.InternetGateways {
-		tags := ec2TagsToMap(igw.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeInternetGateways(ctx, &ec2.DescribeInternetGatewaysInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeInternetGateways: %w", err)
+			}
+			return nil, fmt.Errorf("describing internet gateways: %w", err)
 		}
 
-		r := types.Resource{
-			Type:   "aws_internet_gateway",
-			ID:     awsutil.ToString(igw.InternetGatewayId),
-			Name:   nameFromEC2Tags(igw.Tags),
-			Region: p.region,
-			Tags:   tags,
-		}
-		for _, att := range igw.Attachments {
-			if att.VpcId != nil {
-				r.Dependencies = append(r.Dependencies, types.ResourceRef{
-					Type: "aws_vpc", ID: *att.VpcId,
-				})
+		for _, igw := range out.InternetGateways {
+			tags := ec2TagsToMap(igw.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
 			}
+
+			r := types.Resource{
+				Type:   "aws_internet_gateway",
+				ID:     awsutil.ToString(igw.InternetGatewayId),
+				Name:   nameFromEC2Tags(igw.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+			for _, att := range igw.Attachments {
+				if att.VpcId != nil {
+					r.Dependencies = append(r.Dependencies, types.ResourceRef{
+						Type: "aws_vpc", ID: *att.VpcId,
+					})
+				}
+			}
+			resources = append(resources, r)
 		}
-		resources = append(resources, r)
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("Internet gateways discovery complete", "count", len(resources))
