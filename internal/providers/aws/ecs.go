@@ -7,6 +7,7 @@ import (
 
 	awsutil "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
 	"github.com/ahlert/terraxi/pkg/types"
 )
@@ -40,28 +41,39 @@ func discoverECSClusters(ctx context.Context, p *Provider, filter types.Filter) 
 		return nil, nil
 	}
 
-	desc, err := p.ecs.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: allArns})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ecs:DescribeClusters: %w", err)
-		}
-		return nil, fmt.Errorf("describing ECS clusters: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, c := range desc.Clusters {
-		tags := make(map[string]string, len(c.Tags))
-		for _, t := range c.Tags {
-			tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
+
+	// DescribeClusters accepts max 100 ARNs per call
+	const clusterBatchSize = 100
+	for i := 0; i < len(allArns); i += clusterBatchSize {
+		end := i + clusterBatchSize
+		if end > len(allArns) {
+			end = len(allArns)
+		}
+		batch := allArns[i:end]
+
+		desc, err := p.ecs.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: batch})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ecs:DescribeClusters: %w", err)
+			}
+			return nil, fmt.Errorf("describing ECS clusters: %w", err)
 		}
 
-		resources = append(resources, types.Resource{
-			Type:   "aws_ecs_cluster",
-			ID:     awsutil.ToString(c.ClusterArn),
-			Name:   awsutil.ToString(c.ClusterName),
-			Region: p.region,
-			Tags:   tags,
-		})
+		for _, c := range desc.Clusters {
+			tags := make(map[string]string, len(c.Tags))
+			for _, t := range c.Tags {
+				tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
+			}
+
+			resources = append(resources, types.Resource{
+				Type:   "aws_ecs_cluster",
+				ID:     awsutil.ToString(c.ClusterArn),
+				Name:   awsutil.ToString(c.ClusterName),
+				Region: p.region,
+				Tags:   tags,
+			})
+		}
 	}
 
 	slog.Debug("ECS clusters discovery complete", "count", len(resources))
@@ -161,7 +173,7 @@ func discoverECSTaskDefinitions(ctx context.Context, p *Provider, filter types.F
 
 	for {
 		out, err := p.ecs.ListTaskDefinitions(ctx, &ecs.ListTaskDefinitionsInput{
-			Status:    "ACTIVE",
+			Status:    ecstypes.TaskDefinitionStatusActive,
 			NextToken: nextToken,
 		})
 		if err != nil {
@@ -209,12 +221,12 @@ func discoverECSTaskDefinitions(ctx context.Context, p *Provider, filter types.F
 
 		if td.ExecutionRoleArn != nil {
 			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_iam_role", ID: splitARN(*td.ExecutionRoleArn),
+				Type: "aws_iam_role", ID: roleNameFromARN(*td.ExecutionRoleArn),
 			})
 		}
 		if td.TaskRoleArn != nil {
 			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_iam_role", ID: splitARN(*td.TaskRoleArn),
+				Type: "aws_iam_role", ID: roleNameFromARN(*td.TaskRoleArn),
 			})
 		}
 

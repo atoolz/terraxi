@@ -72,13 +72,10 @@ func discoverLambdaFunctions(ctx context.Context, p *Provider, filter types.Filt
 
 			// Wire IAM role dependency
 			if fn.Role != nil {
-				// Role ARN format: arn:aws:iam::123456:role/my-role
-				// Extract role name from the last segment
-				roleArn := *fn.Role
-				parts := splitARN(roleArn)
-				if parts != "" {
+				roleName := roleNameFromARN(*fn.Role)
+				if roleName != "" {
 					r.Dependencies = append(r.Dependencies, types.ResourceRef{
-						Type: "aws_iam_role", ID: parts,
+						Type: "aws_iam_role", ID: roleName,
 					})
 				}
 			}
@@ -136,12 +133,19 @@ func discoverLambdaLayers(ctx context.Context, p *Provider, filter types.Filter)
 	return resources, nil
 }
 
-// splitARN extracts the resource name from an ARN.
+// roleNameFromARN extracts the role name from an IAM role ARN.
 // e.g., "arn:aws:iam::123456:role/my-role" -> "my-role"
-func splitARN(arn string) string {
-	// ARN format: arn:partition:service:region:account:resource-type/resource-id
+// e.g., "arn:aws:iam::123456:role/path/nested-role" -> "nested-role"
+func roleNameFromARN(arn string) string {
+	// Find the last '/' which separates the role name from the path
 	for i := len(arn) - 1; i >= 0; i-- {
-		if arn[i] == '/' || arn[i] == ':' {
+		if arn[i] == '/' {
+			return arn[i+1:]
+		}
+	}
+	// No slash found: might be just a role name, or ARN with colon separator
+	for i := len(arn) - 1; i >= 0; i-- {
+		if arn[i] == ':' {
 			return arn[i+1:]
 		}
 	}

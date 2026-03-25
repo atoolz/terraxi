@@ -68,20 +68,19 @@ func TestDiscoverLambdaFunctions_WithVPCAndRoleDeps(t *testing.T) {
 	}
 }
 
-func TestSplitARN(t *testing.T) {
+func TestRoleNameFromARN(t *testing.T) {
 	tests := []struct {
 		arn  string
 		want string
 	}{
 		{"arn:aws:iam::123456:role/my-role", "my-role"},
 		{"arn:aws:iam::123456:role/path/nested-role", "nested-role"},
-		{"arn:aws:ecs:us-east-1:123456:task-definition/my-task:3", "3"},
-		{"simple-name", "simple-name"},
+		{"simple-role-name", "simple-role-name"},
 	}
 	for _, tt := range tests {
-		got := splitARN(tt.arn)
+		got := roleNameFromARN(tt.arn)
 		if got != tt.want {
-			t.Errorf("splitARN(%q) = %q, want %q", tt.arn, got, tt.want)
+			t.Errorf("roleNameFromARN(%q) = %q, want %q", tt.arn, got, tt.want)
 		}
 	}
 }

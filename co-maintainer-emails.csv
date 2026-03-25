@@ -1,8 +1,0 @@
-username,name,email,source,current_company,notes
-sergeylanzman,Sergey Lanzman,sergeylanz@gmail.com,git commit (terraformer),Island,"Terraformer creator. 737 commits."
-apparentlymart,Martin Atkins,mart@degeneration.co.uk,git commit (hashicorp/terraform + hcl),independent,"Ex-HashiCorp. Deep Terraform internals."
-tormath1,Mathieu Tortuyaux,mathieu.tortuyaux@gmail.com,git commit (terracognita),unknown,"TerraCognita contributor. Independent."
-xescugc,Francesc Gil,xescugil@gmail.com,git commit (terracognita),Cycloid.io,"TerraCognita architect."
-cam72cam,Christian Mesh,christianmesh1@gmail.com,git commit (opentofu),OpenTofu,"OpenTofu maintainer focused on import."
-patrykorwat,Patryk Orwat,patrykorwat@gmail.com,git commit (terraformer),Nokia,"Principal SW Architect."
-anilkumarnagaraj,anilkumarnagaraj,anilkumar@in.ibm.com,git commit (terraformer),IBM,"Corporate email. May change if leaves IBM."

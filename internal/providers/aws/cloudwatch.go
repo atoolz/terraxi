@@ -18,6 +18,13 @@ func init() {
 }
 
 func discoverCloudWatchLogGroups(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
+	// DescribeLogGroups does not return tags inline. Tag filtering is not supported
+	// for this resource type. When a tag filter is active, return all log groups
+	// rather than silently returning none (consistent with other untaggable resources).
+	if len(filter.Tags) > 0 {
+		slog.Warn("Tag filtering not supported for aws_cloudwatch_log_group (DescribeLogGroups does not return tags). Returning all log groups.")
+	}
+
 	var resources []types.Resource
 	var nextToken *string
 
@@ -34,13 +41,6 @@ func discoverCloudWatchLogGroups(ctx context.Context, p *Provider, filter types.
 
 		for _, lg := range out.LogGroups {
 			name := awsutil.ToString(lg.LogGroupName)
-
-			// CloudWatch log groups don't have tags inline.
-			// Skip tag filtering for this resource type.
-			if len(filter.Tags) > 0 {
-				slog.Debug("Skipping log group tag filter (not available inline)", "logGroup", name)
-				continue
-			}
 
 			resources = append(resources, types.Resource{
 				Type:   "aws_cloudwatch_log_group",
@@ -61,6 +61,10 @@ func discoverCloudWatchLogGroups(ctx context.Context, p *Provider, filter types.
 }
 
 func discoverCloudWatchAlarms(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
+	if len(filter.Tags) > 0 {
+		slog.Warn("Tag filtering not supported for aws_cloudwatch_metric_alarm (DescribeAlarms does not return tags). Returning all alarms.")
+	}
+
 	var resources []types.Resource
 	var nextToken *string
 
@@ -77,11 +81,6 @@ func discoverCloudWatchAlarms(ctx context.Context, p *Provider, filter types.Fil
 
 		for _, alarm := range out.MetricAlarms {
 			name := awsutil.ToString(alarm.AlarmName)
-
-			// Alarms don't have tags inline via DescribeAlarms.
-			if len(filter.Tags) > 0 {
-				continue
-			}
 
 			r := types.Resource{
 				Type:   "aws_cloudwatch_metric_alarm",

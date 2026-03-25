@@ -18,6 +18,8 @@ func init() {
 	RegisterDiscoverer("aws_route53_record", discoverRoute53Records)
 }
 
+// Route53 zones and records do not support inline tag filtering via ListHostedZones/ListResourceRecordSets.
+// Tag filtering is silently not applied for Route53 resources.
 func discoverRoute53Zones(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
 	var resources []types.Resource
 	var marker *string
@@ -80,20 +82,22 @@ func discoverRoute53Records(ctx context.Context, p *Provider, filter types.Filte
 			}
 
 			for _, rr := range out.ResourceRecordSets {
-				name := awsutil.ToString(rr.Name)
+				rawName := awsutil.ToString(rr.Name)
 				rrType := string(rr.Type)
 
 				// Skip NS and SOA records for the zone apex (AWS-managed)
-				if (rrType == "NS" || rrType == "SOA") && name == zone.Name {
+				if (rrType == "NS" || rrType == "SOA") && rawName == zone.Name {
 					continue
 				}
 
+				// Strip trailing dot for import ID (Terraform expects no trailing dot)
+				name := strings.TrimSuffix(rawName, ".")
 				importID := fmt.Sprintf("%s_%s_%s", zone.ID, name, rrType)
 
 				resources = append(resources, types.Resource{
 					Type:   "aws_route53_record",
 					ID:     importID,
-					Name:   fmt.Sprintf("%s-%s", strings.TrimSuffix(name, "."), rrType),
+					Name:   fmt.Sprintf("%s-%s", name, rrType),
 					Region: "",
 					Dependencies: []types.ResourceRef{
 						{Type: "aws_route53_zone", ID: zone.ID},

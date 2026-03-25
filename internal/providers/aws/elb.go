@@ -140,8 +140,8 @@ func discoverTargetGroups(ctx context.Context, p *Provider, filter types.Filter)
 }
 
 func discoverLBListeners(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// Listeners require a load balancer ARN. Discover LBs first.
-	lbs, err := discoverLoadBalancers(ctx, p, types.Filter{})
+	// Listeners require a load balancer ARN. Discover LBs first (with user's filter).
+	lbs, err := discoverLoadBalancers(ctx, p, filter)
 	if err != nil {
 		return nil, err
 	}
