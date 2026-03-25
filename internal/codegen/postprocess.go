@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 
 	"github.com/atoolz/terraxi/internal/codegen/hclutil"
@@ -116,11 +117,12 @@ func extractStringValue(tokens hclwrite.Tokens) string {
 func rawRefTokens(ref string) hclwrite.Tokens {
 	return hclwrite.Tokens{
 		{
-			Type:  9, // hclsyntax.TokenIdent
-			Bytes: []byte(" " + ref),
+			Type:         hclsyntax.TokenIdent,
+			Bytes:        []byte(ref),
+			SpacesBefore: 1,
 		},
 		{
-			Type:  9,
+			Type:  hclsyntax.TokenNewline,
 			Bytes: []byte("\n"),
 		},
 	}
