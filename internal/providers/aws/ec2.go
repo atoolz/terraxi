@@ -2,7 +2,13 @@ package aws
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
+	awsutil "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+
+	"github.com/ahlert/terraxi/internal/discovery"
 	"github.com/ahlert/terraxi/pkg/types"
 )
 
@@ -15,30 +21,180 @@ func init() {
 }
 
 func discoverEC2Instances(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// TODO: Implement using aws-sdk-go-v2
-	// 1. Call ec2.DescribeInstances
-	// 2. Extract instance ID, tags, VPC/subnet refs
-	// 3. Build dependencies (security group refs, subnet ref, key pair ref)
-	// 4. Filter by tags if specified
-	return nil, nil
+	out, err := p.ec2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
+	if err != nil {
+		if isAccessDenied(err) {
+			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeInstances: %w", err)
+		}
+		return nil, fmt.Errorf("describing EC2 instances: %w", err)
+	}
+
+	var resources []types.Resource
+	for _, reservation := range out.Reservations {
+		for _, inst := range reservation.Instances {
+			tags := ec2TagsToMap(inst.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			id := awsutil.ToString(inst.InstanceId)
+			r := types.Resource{
+				Type:   "aws_instance",
+				ID:     id,
+				Name:   nameFromEC2Tags(inst.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+
+			// Wire dependencies
+			if inst.SubnetId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_subnet", ID: *inst.SubnetId,
+				})
+			}
+			if inst.VpcId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_vpc", ID: *inst.VpcId,
+				})
+			}
+			for _, sg := range inst.SecurityGroups {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_security_group", ID: awsutil.ToString(sg.GroupId),
+				})
+			}
+
+			resources = append(resources, r)
+		}
+	}
+
+	slog.Debug("EC2 instances discovery complete", "count", len(resources))
+	return resources, nil
 }
 
 func discoverSecurityGroups(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// TODO: ec2.DescribeSecurityGroups
-	return nil, nil
+	out, err := p.ec2.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{})
+	if err != nil {
+		if isAccessDenied(err) {
+			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSecurityGroups: %w", err)
+		}
+		return nil, fmt.Errorf("describing security groups: %w", err)
+	}
+
+	var resources []types.Resource
+	for _, sg := range out.SecurityGroups {
+		tags := ec2TagsToMap(sg.Tags)
+		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+			continue
+		}
+
+		r := types.Resource{
+			Type:   "aws_security_group",
+			ID:     awsutil.ToString(sg.GroupId),
+			Name:   nameFromEC2Tags(sg.Tags),
+			Region: p.region,
+			Tags:   tags,
+		}
+		if sg.VpcId != nil {
+			r.Dependencies = append(r.Dependencies, types.ResourceRef{
+				Type: "aws_vpc", ID: *sg.VpcId,
+			})
+		}
+		resources = append(resources, r)
+	}
+
+	slog.Debug("Security groups discovery complete", "count", len(resources))
+	return resources, nil
 }
 
 func discoverEBSVolumes(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// TODO: ec2.DescribeVolumes
-	return nil, nil
+	out, err := p.ec2.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{})
+	if err != nil {
+		if isAccessDenied(err) {
+			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeVolumes: %w", err)
+		}
+		return nil, fmt.Errorf("describing EBS volumes: %w", err)
+	}
+
+	var resources []types.Resource
+	for _, vol := range out.Volumes {
+		tags := ec2TagsToMap(vol.Tags)
+		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+			continue
+		}
+
+		resources = append(resources, types.Resource{
+			Type:   "aws_ebs_volume",
+			ID:     awsutil.ToString(vol.VolumeId),
+			Name:   nameFromEC2Tags(vol.Tags),
+			Region: p.region,
+			Tags:   tags,
+		})
+	}
+
+	slog.Debug("EBS volumes discovery complete", "count", len(resources))
+	return resources, nil
 }
 
 func discoverElasticIPs(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// TODO: ec2.DescribeAddresses
-	return nil, nil
+	out, err := p.ec2.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{})
+	if err != nil {
+		if isAccessDenied(err) {
+			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeAddresses: %w", err)
+		}
+		return nil, fmt.Errorf("describing Elastic IPs: %w", err)
+	}
+
+	var resources []types.Resource
+	for _, addr := range out.Addresses {
+		tags := ec2TagsToMap(addr.Tags)
+		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+			continue
+		}
+
+		r := types.Resource{
+			Type:   "aws_eip",
+			ID:     awsutil.ToString(addr.AllocationId),
+			Name:   nameFromEC2Tags(addr.Tags),
+			Region: p.region,
+			Tags:   tags,
+		}
+		if addr.InstanceId != nil {
+			r.Dependencies = append(r.Dependencies, types.ResourceRef{
+				Type: "aws_instance", ID: *addr.InstanceId,
+			})
+		}
+		resources = append(resources, r)
+	}
+
+	slog.Debug("Elastic IPs discovery complete", "count", len(resources))
+	return resources, nil
 }
 
 func discoverKeyPairs(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	// TODO: ec2.DescribeKeyPairs
-	return nil, nil
+	out, err := p.ec2.DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{})
+	if err != nil {
+		if isAccessDenied(err) {
+			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeKeyPairs: %w", err)
+		}
+		return nil, fmt.Errorf("describing key pairs: %w", err)
+	}
+
+	var resources []types.Resource
+	for _, kp := range out.KeyPairs {
+		tags := ec2TagsToMap(kp.Tags)
+		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+			continue
+		}
+
+		resources = append(resources, types.Resource{
+			Type:   "aws_key_pair",
+			ID:     awsutil.ToString(kp.KeyPairId),
+			Name:   awsutil.ToString(kp.KeyName),
+			Region: p.region,
+			Tags:   tags,
+		})
+	}
+
+	slog.Debug("Key pairs discovery complete", "count", len(resources))
+	return resources, nil
 }
