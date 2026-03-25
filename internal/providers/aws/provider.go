@@ -58,14 +58,14 @@ func NewWithClients(region string, opts ...ClientOption) *Provider {
 // ClientOption configures a Provider with a specific client (for testing).
 type ClientOption func(*Provider)
 
-func WithEC2(c EC2API) ClientOption             { return func(p *Provider) { p.ec2 = c } }
-func WithS3(c S3API) ClientOption               { return func(p *Provider) { p.s3 = c } }
-func WithIAM(c IAMAPI) ClientOption             { return func(p *Provider) { p.iam = c } }
-func WithRDS(c RDSAPI) ClientOption             { return func(p *Provider) { p.rds = c } }
-func WithELB(c ELBAPI) ClientOption             { return func(p *Provider) { p.elb = c } }
-func WithRoute53(c Route53API) ClientOption     { return func(p *Provider) { p.route53 = c } }
-func WithLambda(c LambdaAPI) ClientOption       { return func(p *Provider) { p.lambda = c } }
-func WithECS(c ECSAPI) ClientOption             { return func(p *Provider) { p.ecs = c } }
+func WithEC2(c EC2API) ClientOption               { return func(p *Provider) { p.ec2 = c } }
+func WithS3(c S3API) ClientOption                 { return func(p *Provider) { p.s3 = c } }
+func WithIAM(c IAMAPI) ClientOption               { return func(p *Provider) { p.iam = c } }
+func WithRDS(c RDSAPI) ClientOption               { return func(p *Provider) { p.rds = c } }
+func WithELB(c ELBAPI) ClientOption               { return func(p *Provider) { p.elb = c } }
+func WithRoute53(c Route53API) ClientOption       { return func(p *Provider) { p.route53 = c } }
+func WithLambda(c LambdaAPI) ClientOption         { return func(p *Provider) { p.lambda = c } }
+func WithECS(c ECSAPI) ClientOption               { return func(p *Provider) { p.ecs = c } }
 func WithCloudWatch(c CloudWatchAPI) ClientOption { return func(p *Provider) { p.cloudwatch = c } }
 func WithCloudWatchLogs(c CloudWatchLogsAPI) ClientOption {
 	return func(p *Provider) { p.cloudwatchlogs = c }

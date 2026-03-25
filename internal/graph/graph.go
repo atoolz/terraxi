@@ -78,8 +78,8 @@ func (g *DependencyGraph) DependentsOf(r types.Resource) []types.Resource {
 // Circular dependencies are detected and the back-edge is skipped to prevent
 // stack overflow (AWS security groups can reference each other).
 func (g *DependencyGraph) TopologicalSort() []types.Resource {
-	visited := make(map[string]bool)  // fully processed
-	inStack := make(map[string]bool)  // currently on the recursion stack
+	visited := make(map[string]bool) // fully processed
+	inStack := make(map[string]bool) // currently on the recursion stack
 	var sorted []types.Resource
 	var visit func(key string)
 

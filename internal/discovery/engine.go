@@ -36,9 +36,9 @@ func (e *Engine) Run(ctx context.Context, filter types.Filter) (*types.Discovery
 	}
 
 	var (
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, e.concurrency)
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, e.concurrency)
 	)
 
 	for _, rt := range targetTypes {
