@@ -58,53 +58,72 @@ func (pp *PostProcessor) replaceIDs(f *hclwrite.File) {
 	}
 }
 
-// replaceInBody walks attributes and nested blocks, replacing ID literals.
+// replaceInBody walks attributes and replaces string values that match
+// discovered resource IDs with Terraform traversal references.
 func (pp *PostProcessor) replaceInBody(body *hclwrite.Body) {
 	for name, attr := range body.Attributes() {
+		// Extract the raw string value from the attribute
 		tokens := attr.Expr().BuildTokens(nil)
-		modified := false
-
-		for _, tok := range tokens {
-			val := unquoteTokenPtr(tok)
-			if val == "" {
-				continue
-			}
-
-			ref, ok := pp.idIndex.Lookup(val)
-			if !ok {
-				continue
-			}
-
-			slog.Debug("Replacing ID with reference", "attribute", name, "id", val, "ref", ref)
-			tok.Bytes = []byte(ref)
-			modified = true
+		val := extractStringValue(tokens)
+		if val == "" {
+			continue
 		}
 
-		if modified {
-			body.SetAttributeRaw(name, tokens)
+		// Check if this value matches a discovered resource ID
+		ref, ok := pp.idIndex.Lookup(val)
+		if !ok {
+			continue
 		}
+
+		// Replace the entire attribute with a traversal expression
+		slog.Debug("Replacing ID with reference", "attribute", name, "id", val, "ref", ref)
+		body.SetAttributeRaw(name, rawRefTokens(ref))
 	}
 
-	// Recurse into nested blocks (e.g., ingress/egress in security groups)
+	// Recurse into nested blocks
 	for _, nested := range body.Blocks() {
 		pp.replaceInBody(nested.Body())
 	}
 }
 
-// unquoteTokenPtr extracts the string value from a quoted HCL token pointer.
-func unquoteTokenPtr(tok *hclwrite.Token) string {
-	b := tok.Bytes
-	if len(b) < 2 {
-		return ""
+// extractStringValue extracts a plain string value from HCL tokens.
+// Returns empty string if the expression is not a simple quoted string.
+func extractStringValue(tokens hclwrite.Tokens) string {
+	// A simple quoted string in hclwrite tokens looks like:
+	// [TokenOQuote][TokenQuotedLit "value"][TokenCQuote]
+	// We want the middle token's bytes.
+	var parts []string
+	for _, tok := range tokens {
+		b := string(tok.Bytes)
+		// Skip quotes, newlines, and template markers
+		if b == `"` || b == "" || b == "\n" {
+			continue
+		}
+		parts = append(parts, b)
 	}
-	// hclwrite tokens for string literals contain the raw bytes without quotes,
-	// but the token type tells us it's a string literal
-	val := string(b)
-	// Check common AWS ID patterns to avoid replacing arbitrary strings
+	if len(parts) != 1 {
+		return "" // Not a simple single-value string
+	}
+	val := parts[0]
 	if !looksLikeAWSID(val) {
 		return ""
 	}
 	return val
+}
+
+// rawRefTokens creates raw HCL tokens for a reference expression like "aws_vpc.main.id".
+// This is used with SetAttributeRaw to replace a quoted string with an unquoted traversal.
+func rawRefTokens(ref string) hclwrite.Tokens {
+	return hclwrite.Tokens{
+		{
+			Type:  9, // hclsyntax.TokenIdent
+			Bytes: []byte(" " + ref),
+		},
+		{
+			Type:  9,
+			Bytes: []byte("\n"),
+		},
+	}
 }
 
 // looksLikeAWSID returns true if the string matches common AWS resource ID patterns.
@@ -139,6 +158,12 @@ func (pp *PostProcessor) SplitByService(f *hclwrite.File, outputDir string) erro
 		}
 		resourceType := block.Labels()[0]
 		service := ServiceFromResourceType(resourceType)
+
+		// Sanitize service name to prevent path traversal
+		if !isValidServiceName(service) {
+			slog.Warn("Skipping block with invalid service name", "service", service, "type", resourceType)
+			continue
+		}
 
 		if _, exists := byService[service]; !exists {
 			byService[service] = hclwrite.NewEmptyFile()
@@ -188,6 +213,21 @@ func (pp *PostProcessor) OrganizeByService(resources []types.Resource) map[strin
 		byService[service] = append(byService[service], r)
 	}
 	return byService
+}
+
+// isValidServiceName checks that a service name is safe for use as a directory name.
+func isValidServiceName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		if !isLower && !isDigit && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // serviceRegistry maps resource types to service names.

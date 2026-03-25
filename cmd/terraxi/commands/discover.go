@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -155,11 +156,20 @@ func writeDryRunOutput(w *os.File, result *types.DiscoveryResult, format string)
 	_, _ = fmt.Fprintf(w, "SERVICE          COUNT   RESOURCE TYPES\n")
 	_, _ = fmt.Fprintf(w, "-------          -----   --------------\n")
 
-	for service, count := range byService {
+	// Sort services for deterministic output
+	services := make([]string, 0, len(byService))
+	for s := range byService {
+		services = append(services, s)
+	}
+	sort.Strings(services)
+
+	for _, service := range services {
+		count := byService[service]
 		typeList := make([]string, 0, len(byServiceTypes[service]))
 		for t := range byServiceTypes[service] {
 			typeList = append(typeList, t)
 		}
+		sort.Strings(typeList)
 		_, _ = fmt.Fprintf(w, "%-16s %5d   %s\n", service, count, strings.Join(typeList, ", "))
 	}
 

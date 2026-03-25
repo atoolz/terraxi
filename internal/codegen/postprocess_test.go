@@ -178,3 +178,26 @@ func TestLooksLikeAWSID(t *testing.T) {
 		}
 	}
 }
+
+func TestIsValidServiceName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"ec2", true},
+		{"s3", true},
+		{"route53", true},
+		{"cloud-watch", true},
+		{"other", true},
+		{"../../../etc", false},
+		{"", false},
+		{"a/b", false},
+		{"a b", false},
+	}
+	for _, tt := range tests {
+		got := isValidServiceName(tt.input)
+		if got != tt.want {
+			t.Errorf("isValidServiceName(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
