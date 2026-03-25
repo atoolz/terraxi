@@ -135,11 +135,11 @@ func TestParseState_ForEachInstances(t *testing.T) {
 	if len(resources) != 2 {
 		t.Fatalf("expected 2 instances, got %d", len(resources))
 	}
-	if resources[0].Address != "aws_s3_bucket.data[logs]" {
-		t.Errorf("expected aws_s3_bucket.data[logs], got %s", resources[0].Address)
+	if resources[0].Address != `aws_s3_bucket.data["logs"]` {
+		t.Errorf(`expected aws_s3_bucket.data["logs"], got %s`, resources[0].Address)
 	}
-	if resources[1].Address != "aws_s3_bucket.data[assets]" {
-		t.Errorf("expected aws_s3_bucket.data[assets], got %s", resources[1].Address)
+	if resources[1].Address != `aws_s3_bucket.data["assets"]` {
+		t.Errorf(`expected aws_s3_bucket.data["assets"], got %s`, resources[1].Address)
 	}
 }
 

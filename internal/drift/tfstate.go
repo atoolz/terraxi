@@ -64,7 +64,12 @@ func ParseState(data []byte) ([]StateResource, error) {
 			id := extractIDFromAttributes(inst.Attributes)
 			addr := fmt.Sprintf("%s.%s", entry.Type, entry.Name)
 			if inst.IndexKey != nil {
-				addr = fmt.Sprintf("%s.%s[%v]", entry.Type, entry.Name, inst.IndexKey)
+				switch k := inst.IndexKey.(type) {
+				case string:
+					addr = fmt.Sprintf("%s.%s[%q]", entry.Type, entry.Name, k)
+				default:
+					addr = fmt.Sprintf("%s.%s[%v]", entry.Type, entry.Name, inst.IndexKey)
+				}
 			}
 			resources = append(resources, StateResource{
 				Type:    entry.Type,
