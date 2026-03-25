@@ -12,6 +12,7 @@ import (
 
 	"github.com/atoolz/terraxi/internal/codegen"
 	"github.com/atoolz/terraxi/internal/discovery"
+	"github.com/atoolz/terraxi/internal/drift"
 	"github.com/atoolz/terraxi/internal/graph"
 	"github.com/atoolz/terraxi/internal/output"
 	awsprovider "github.com/atoolz/terraxi/internal/providers/aws"
@@ -28,6 +29,8 @@ type discoverOpts struct {
 	engine      string
 	structure   string
 	inventory   string
+	state       string
+	skipManaged bool
 	dryRun      bool
 	format      string
 	concurrency int
@@ -65,6 +68,8 @@ Examples:
 	cmd.Flags().StringVar(&opts.engine, "engine", "terraform", "IaC engine: terraform or tofu")
 	cmd.Flags().StringVar(&opts.structure, "structure", "flat", "Output structure: flat (single dir) or modules (per-service subdirs)")
 	cmd.Flags().StringVar(&opts.inventory, "inventory", "", "Write discovery results as JSON to this file")
+	cmd.Flags().StringVar(&opts.state, "state", "", "Path to terraform.tfstate (for --skip-managed)")
+	cmd.Flags().BoolVar(&opts.skipManaged, "skip-managed", false, "Skip resources already in the state file (requires --state)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Preview what would be discovered without generating code")
 	cmd.Flags().StringVar(&opts.format, "format", "table", "Output format: table or json")
 	cmd.Flags().IntVar(&opts.concurrency, "concurrency", 10, "Max concurrent API calls")
@@ -133,6 +138,29 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 	}
 
 	mergedResult.Region = strings.Join(regions, ",")
+
+	// Filter out already-managed resources if --skip-managed is set
+	if opts.skipManaged {
+		if opts.state == "" {
+			return fmt.Errorf("--skip-managed requires --state")
+		}
+		stateResources, stateErr := drift.ReadState(opts.state)
+		if stateErr != nil {
+			return fmt.Errorf("failed to read state for --skip-managed: %w", stateErr)
+		}
+		stateIdx := drift.StateIndex(stateResources)
+		var filtered []types.Resource
+		for _, r := range mergedResult.Resources {
+			key := r.Type + ":" + r.ID
+			if _, managed := stateIdx[key]; !managed {
+				filtered = append(filtered, r)
+			}
+		}
+		skipped := len(mergedResult.Resources) - len(filtered)
+		slog.Info("Skipped managed resources", "skipped", skipped, "remaining", len(filtered))
+		mergedResult.Resources = filtered
+	}
+
 	result := mergedResult
 
 	// Write JSON inventory if requested
