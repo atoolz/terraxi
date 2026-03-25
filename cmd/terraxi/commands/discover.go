@@ -16,24 +16,28 @@ import (
 	"github.com/atoolz/terraxi/internal/graph"
 	"github.com/atoolz/terraxi/internal/output"
 	awsprovider "github.com/atoolz/terraxi/internal/providers/aws"
+	gcpprovider "github.com/atoolz/terraxi/internal/providers/gcp"
 	"github.com/atoolz/terraxi/pkg/types"
 )
 
 type discoverOpts struct {
-	region      string
-	regions     []string
-	profile     string
-	services    []string
-	filter      string
-	outputDir   string
-	engine      string
-	structure   string
-	inventory   string
-	state       string
-	skipManaged bool
-	dryRun      bool
-	format      string
-	concurrency int
+	region          string
+	regions         []string
+	profile         string
+	assumeRole      string
+	externalID      string
+	services        []string
+	filter          string
+	outputDir       string
+	engine          string
+	providerVersion string
+	structure       string
+	inventory       string
+	state           string
+	skipManaged     bool
+	dryRun          bool
+	format          string
+	concurrency     int
 }
 
 func newDiscoverCmd() *cobra.Command {
@@ -62,10 +66,13 @@ Examples:
 	cmd.Flags().StringVar(&opts.region, "region", "", "Cloud region to scan")
 	cmd.Flags().StringSliceVar(&opts.regions, "regions", nil, "Multiple regions to scan (comma-separated, e.g., us-east-1,eu-west-1)")
 	cmd.Flags().StringVar(&opts.profile, "profile", "", "AWS profile to use")
+	cmd.Flags().StringVar(&opts.assumeRole, "assume-role", "", "AWS IAM role ARN to assume for cross-account discovery")
+	cmd.Flags().StringVar(&opts.externalID, "external-id", "", "External ID for cross-account role assumption")
 	cmd.Flags().StringSliceVar(&opts.services, "services", nil, "Services to scan (comma-separated, e.g., ec2,s3,iam)")
 	cmd.Flags().StringVar(&opts.filter, "filter", "", "Filter expression (e.g., \"tags.env=production\")")
 	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", "./imported", "Output directory for generated files")
 	cmd.Flags().StringVar(&opts.engine, "engine", "terraform", "IaC engine: terraform or tofu")
+	cmd.Flags().StringVar(&opts.providerVersion, "provider-version", "~> 5.0", "AWS provider version constraint for generated providers.tf")
 	cmd.Flags().StringVar(&opts.structure, "structure", "flat", "Output structure: flat (single dir) or modules (per-service subdirs)")
 	cmd.Flags().StringVar(&opts.inventory, "inventory", "", "Write discovery results as JSON to this file")
 	cmd.Flags().StringVar(&opts.state, "state", "", "Path to terraform.tfstate (for --skip-managed)")
@@ -108,8 +115,10 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 		}
 
 		cfg := discovery.ProviderConfig{
-			Region:  region,
-			Profile: opts.profile,
+			Region:     region,
+			Profile:    opts.profile,
+			AssumeRole: opts.assumeRole,
+			ExternalID: opts.externalID,
 		}
 		if err := provider.Configure(ctx, cfg); err != nil {
 			return fmt.Errorf("failed to configure %s provider for %s: %w", providerName, region, err)
@@ -270,8 +279,10 @@ func getProvider(name string) (discovery.Provider, error) {
 	switch name {
 	case "aws":
 		return awsprovider.New(), nil
+	case "gcp":
+		return gcpprovider.New(), nil
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s (supported: aws)", name)
+		return nil, fmt.Errorf("unsupported provider: %s (supported: aws, gcp)", name)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -89,6 +90,28 @@ func (p *Provider) Configure(ctx context.Context, cfg discovery.ProviderConfig) 
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS credentials: %w\nEnsure AWS_PROFILE, AWS_ACCESS_KEY_ID, or instance role is configured", err)
+	}
+
+	// Assume role if specified (cross-account discovery)
+	if cfg.AssumeRole != "" {
+		stsClient := sts.NewFromConfig(awsCfg)
+		input := &sts.AssumeRoleInput{
+			RoleArn:         &cfg.AssumeRole,
+			RoleSessionName: aws.String("terraxi-discovery"),
+		}
+		if cfg.ExternalID != "" {
+			input.ExternalId = &cfg.ExternalID
+		}
+		creds, assumeErr := stsClient.AssumeRole(ctx, input)
+		if assumeErr != nil {
+			return fmt.Errorf("failed to assume role %s: %w", cfg.AssumeRole, assumeErr)
+		}
+		awsCfg.Credentials = credentials.NewStaticCredentialsProvider(
+			*creds.Credentials.AccessKeyId,
+			*creds.Credentials.SecretAccessKey,
+			*creds.Credentials.SessionToken,
+		)
+		slog.Info("Assumed role", "role", cfg.AssumeRole)
 	}
 
 	// Validate credentials early
