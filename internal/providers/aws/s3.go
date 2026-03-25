@@ -55,7 +55,7 @@ func discoverS3Buckets(ctx context.Context, p *Provider, filter types.Filter) ([
 		tagOut, err := p.s3.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{Bucket: &name})
 		if err != nil {
 			if !isNotFound(err) && !isAccessDenied(err) {
-				slog.Debug("Failed to get tags for bucket", "bucket", name, "error", err)
+				slog.Warn("Failed to get tags for bucket", "bucket", name, "error", err)
 			}
 		} else {
 			tags = s3TagsToMap(tagOut.TagSet)

@@ -21,50 +21,58 @@ func init() {
 }
 
 func discoverEC2Instances(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeInstances: %w", err)
-		}
-		return nil, fmt.Errorf("describing EC2 instances: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, reservation := range out.Reservations {
-		for _, inst := range reservation.Instances {
-			tags := ec2TagsToMap(inst.Tags)
-			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-				continue
-			}
+	var nextToken *string
 
-			id := awsutil.ToString(inst.InstanceId)
-			r := types.Resource{
-				Type:   "aws_instance",
-				ID:     id,
-				Name:   nameFromEC2Tags(inst.Tags),
-				Region: p.region,
-				Tags:   tags,
+	for {
+		out, err := p.ec2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeInstances: %w", err)
 			}
-
-			// Wire dependencies
-			if inst.SubnetId != nil {
-				r.Dependencies = append(r.Dependencies, types.ResourceRef{
-					Type: "aws_subnet", ID: *inst.SubnetId,
-				})
-			}
-			if inst.VpcId != nil {
-				r.Dependencies = append(r.Dependencies, types.ResourceRef{
-					Type: "aws_vpc", ID: *inst.VpcId,
-				})
-			}
-			for _, sg := range inst.SecurityGroups {
-				r.Dependencies = append(r.Dependencies, types.ResourceRef{
-					Type: "aws_security_group", ID: awsutil.ToString(sg.GroupId),
-				})
-			}
-
-			resources = append(resources, r)
+			return nil, fmt.Errorf("describing EC2 instances: %w", err)
 		}
+
+		for _, reservation := range out.Reservations {
+			for _, inst := range reservation.Instances {
+				tags := ec2TagsToMap(inst.Tags)
+				if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+					continue
+				}
+
+				id := awsutil.ToString(inst.InstanceId)
+				r := types.Resource{
+					Type:   "aws_instance",
+					ID:     id,
+					Name:   nameFromEC2Tags(inst.Tags),
+					Region: p.region,
+					Tags:   tags,
+				}
+
+				if inst.SubnetId != nil {
+					r.Dependencies = append(r.Dependencies, types.ResourceRef{
+						Type: "aws_subnet", ID: *inst.SubnetId,
+					})
+				}
+				if inst.VpcId != nil {
+					r.Dependencies = append(r.Dependencies, types.ResourceRef{
+						Type: "aws_vpc", ID: *inst.VpcId,
+					})
+				}
+				for _, sg := range inst.SecurityGroups {
+					r.Dependencies = append(r.Dependencies, types.ResourceRef{
+						Type: "aws_security_group", ID: awsutil.ToString(sg.GroupId),
+					})
+				}
+
+				resources = append(resources, r)
+			}
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("EC2 instances discovery complete", "count", len(resources))
@@ -72,34 +80,43 @@ func discoverEC2Instances(ctx context.Context, p *Provider, filter types.Filter)
 }
 
 func discoverSecurityGroups(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSecurityGroups: %w", err)
-		}
-		return nil, fmt.Errorf("describing security groups: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, sg := range out.SecurityGroups {
-		tags := ec2TagsToMap(sg.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSecurityGroups: %w", err)
+			}
+			return nil, fmt.Errorf("describing security groups: %w", err)
 		}
 
-		r := types.Resource{
-			Type:   "aws_security_group",
-			ID:     awsutil.ToString(sg.GroupId),
-			Name:   nameFromEC2Tags(sg.Tags),
-			Region: p.region,
-			Tags:   tags,
+		for _, sg := range out.SecurityGroups {
+			tags := ec2TagsToMap(sg.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			r := types.Resource{
+				Type:   "aws_security_group",
+				ID:     awsutil.ToString(sg.GroupId),
+				Name:   nameFromEC2Tags(sg.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+			if sg.VpcId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_vpc", ID: *sg.VpcId,
+				})
+			}
+			resources = append(resources, r)
 		}
-		if sg.VpcId != nil {
-			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_vpc", ID: *sg.VpcId,
-			})
+
+		if out.NextToken == nil {
+			break
 		}
-		resources = append(resources, r)
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("Security groups discovery complete", "count", len(resources))
@@ -107,28 +124,37 @@ func discoverSecurityGroups(ctx context.Context, p *Provider, filter types.Filte
 }
 
 func discoverEBSVolumes(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeVolumes: %w", err)
-		}
-		return nil, fmt.Errorf("describing EBS volumes: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, vol := range out.Volumes {
-		tags := ec2TagsToMap(vol.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeVolumes: %w", err)
+			}
+			return nil, fmt.Errorf("describing EBS volumes: %w", err)
 		}
 
-		resources = append(resources, types.Resource{
-			Type:   "aws_ebs_volume",
-			ID:     awsutil.ToString(vol.VolumeId),
-			Name:   nameFromEC2Tags(vol.Tags),
-			Region: p.region,
-			Tags:   tags,
-		})
+		for _, vol := range out.Volumes {
+			tags := ec2TagsToMap(vol.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			resources = append(resources, types.Resource{
+				Type:   "aws_ebs_volume",
+				ID:     awsutil.ToString(vol.VolumeId),
+				Name:   nameFromEC2Tags(vol.Tags),
+				Region: p.region,
+				Tags:   tags,
+			})
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("EBS volumes discovery complete", "count", len(resources))
@@ -146,6 +172,12 @@ func discoverElasticIPs(ctx context.Context, p *Provider, filter types.Filter) (
 
 	var resources []types.Resource
 	for _, addr := range out.Addresses {
+		// Classic (non-VPC) EIPs have no AllocationId and cannot be imported
+		id := awsutil.ToString(addr.AllocationId)
+		if id == "" {
+			continue
+		}
+
 		tags := ec2TagsToMap(addr.Tags)
 		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
 			continue
@@ -153,7 +185,7 @@ func discoverElasticIPs(ctx context.Context, p *Provider, filter types.Filter) (
 
 		r := types.Resource{
 			Type:   "aws_eip",
-			ID:     awsutil.ToString(addr.AllocationId),
+			ID:     id,
 			Name:   nameFromEC2Tags(addr.Tags),
 			Region: p.region,
 			Tags:   tags,

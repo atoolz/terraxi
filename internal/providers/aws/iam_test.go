@@ -41,6 +41,7 @@ func TestDiscoverIAMRoles_SkipsServiceLinked(t *testing.T) {
 				Roles: []iamtypes.Role{
 					{RoleName: ptr("my-app-role"), Path: ptr("/")},
 					{RoleName: ptr("AWSServiceRoleForECS"), Path: ptr("/aws-service-role/ecs.amazonaws.com/")},
+					{RoleName: ptr("short-path-role"), Path: ptr("/x/")}, // short path, should not panic
 				},
 			}, nil
 		},
@@ -50,8 +51,8 @@ func TestDiscoverIAMRoles_SkipsServiceLinked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resources) != 1 {
-		t.Fatalf("expected 1 role (service-linked skipped), got %d", len(resources))
+	if len(resources) != 2 {
+		t.Fatalf("expected 2 roles (service-linked skipped, short-path kept), got %d", len(resources))
 	}
 	if resources[0].Name != "my-app-role" {
 		t.Errorf("expected my-app-role, got %s", resources[0].Name)

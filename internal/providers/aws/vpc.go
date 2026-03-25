@@ -20,6 +20,7 @@ func init() {
 	RegisterDiscoverer("aws_internet_gateway", discoverInternetGateways)
 }
 
+// DescribeVpcs does not paginate in the AWS API (returns all VPCs at once).
 func discoverVPCs(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
 	out, err := p.ec2.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{})
 	if err != nil {
@@ -49,34 +50,43 @@ func discoverVPCs(ctx context.Context, p *Provider, filter types.Filter) ([]type
 }
 
 func discoverSubnets(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSubnets: %w", err)
-		}
-		return nil, fmt.Errorf("describing subnets: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, subnet := range out.Subnets {
-		tags := ec2TagsToMap(subnet.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSubnets: %w", err)
+			}
+			return nil, fmt.Errorf("describing subnets: %w", err)
 		}
 
-		r := types.Resource{
-			Type:   "aws_subnet",
-			ID:     awsutil.ToString(subnet.SubnetId),
-			Name:   nameFromEC2Tags(subnet.Tags),
-			Region: p.region,
-			Tags:   tags,
+		for _, subnet := range out.Subnets {
+			tags := ec2TagsToMap(subnet.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			r := types.Resource{
+				Type:   "aws_subnet",
+				ID:     awsutil.ToString(subnet.SubnetId),
+				Name:   nameFromEC2Tags(subnet.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+			if subnet.VpcId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_vpc", ID: *subnet.VpcId,
+				})
+			}
+			resources = append(resources, r)
 		}
-		if subnet.VpcId != nil {
-			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_vpc", ID: *subnet.VpcId,
-			})
+
+		if out.NextToken == nil {
+			break
 		}
-		resources = append(resources, r)
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("Subnets discovery complete", "count", len(resources))
@@ -84,34 +94,43 @@ func discoverSubnets(ctx context.Context, p *Provider, filter types.Filter) ([]t
 }
 
 func discoverRouteTables(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeRouteTables: %w", err)
-		}
-		return nil, fmt.Errorf("describing route tables: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, rt := range out.RouteTables {
-		tags := ec2TagsToMap(rt.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeRouteTables: %w", err)
+			}
+			return nil, fmt.Errorf("describing route tables: %w", err)
 		}
 
-		r := types.Resource{
-			Type:   "aws_route_table",
-			ID:     awsutil.ToString(rt.RouteTableId),
-			Name:   nameFromEC2Tags(rt.Tags),
-			Region: p.region,
-			Tags:   tags,
+		for _, rt := range out.RouteTables {
+			tags := ec2TagsToMap(rt.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			r := types.Resource{
+				Type:   "aws_route_table",
+				ID:     awsutil.ToString(rt.RouteTableId),
+				Name:   nameFromEC2Tags(rt.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+			if rt.VpcId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_vpc", ID: *rt.VpcId,
+				})
+			}
+			resources = append(resources, r)
 		}
-		if rt.VpcId != nil {
-			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_vpc", ID: *rt.VpcId,
-			})
+
+		if out.NextToken == nil {
+			break
 		}
-		resources = append(resources, r)
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("Route tables discovery complete", "count", len(resources))
@@ -119,45 +138,55 @@ func discoverRouteTables(ctx context.Context, p *Provider, filter types.Filter) 
 }
 
 func discoverNatGateways(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
-	out, err := p.ec2.DescribeNatGateways(ctx, &ec2.DescribeNatGatewaysInput{})
-	if err != nil {
-		if isAccessDenied(err) {
-			return nil, fmt.Errorf("insufficient permissions for ec2:DescribeNatGateways: %w", err)
-		}
-		return nil, fmt.Errorf("describing NAT gateways: %w", err)
-	}
-
 	var resources []types.Resource
-	for _, ng := range out.NatGateways {
-		tags := ec2TagsToMap(ng.Tags)
-		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
-			continue
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeNatGateways(ctx, &ec2.DescribeNatGatewaysInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeNatGateways: %w", err)
+			}
+			return nil, fmt.Errorf("describing NAT gateways: %w", err)
 		}
 
-		r := types.Resource{
-			Type:   "aws_nat_gateway",
-			ID:     awsutil.ToString(ng.NatGatewayId),
-			Name:   nameFromEC2Tags(ng.Tags),
-			Region: p.region,
-			Tags:   tags,
+		for _, ng := range out.NatGateways {
+			tags := ec2TagsToMap(ng.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			r := types.Resource{
+				Type:   "aws_nat_gateway",
+				ID:     awsutil.ToString(ng.NatGatewayId),
+				Name:   nameFromEC2Tags(ng.Tags),
+				Region: p.region,
+				Tags:   tags,
+			}
+			if ng.SubnetId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_subnet", ID: *ng.SubnetId,
+				})
+			}
+			if ng.VpcId != nil {
+				r.Dependencies = append(r.Dependencies, types.ResourceRef{
+					Type: "aws_vpc", ID: *ng.VpcId,
+				})
+			}
+			resources = append(resources, r)
 		}
-		if ng.SubnetId != nil {
-			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_subnet", ID: *ng.SubnetId,
-			})
+
+		if out.NextToken == nil {
+			break
 		}
-		if ng.VpcId != nil {
-			r.Dependencies = append(r.Dependencies, types.ResourceRef{
-				Type: "aws_vpc", ID: *ng.VpcId,
-			})
-		}
-		resources = append(resources, r)
+		nextToken = out.NextToken
 	}
 
 	slog.Debug("NAT gateways discovery complete", "count", len(resources))
 	return resources, nil
 }
 
+// DescribeInternetGateways does not paginate in the AWS API.
 func discoverInternetGateways(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
 	out, err := p.ec2.DescribeInternetGateways(ctx, &ec2.DescribeInternetGatewaysInput{})
 	if err != nil {
