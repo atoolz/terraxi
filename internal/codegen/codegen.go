@@ -78,13 +78,16 @@ func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource)
 		return err
 	}
 
+	// Build ID index with a fresh resolver (same order = same names as import blocks)
+	idIndex := NewIDIndex(resources, NewNameResolver())
+
 	// Post-process the generated HCL
 	rawHCL, err := os.ReadFile(generatedFile)
 	if err != nil {
 		return fmt.Errorf("failed to read generated HCL: %w", err)
 	}
 
-	pp := NewPostProcessor(g.depGraph)
+	pp := NewPostProcessor(g.depGraph, idIndex)
 	processed, err := pp.Process(rawHCL, resources)
 	if err != nil {
 		return fmt.Errorf("post-processing failed: %w", err)

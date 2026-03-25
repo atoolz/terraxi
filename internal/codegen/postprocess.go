@@ -10,12 +10,15 @@ import (
 // PostProcessor transforms raw generated HCL into production-quality code.
 // This is Terraxi's core differentiator.
 type PostProcessor struct {
-	graph *graph.DependencyGraph
+	graph   *graph.DependencyGraph
+	idIndex *IDIndex
 }
 
-// NewPostProcessor creates a new post-processor with a dependency graph.
-func NewPostProcessor(g *graph.DependencyGraph) *PostProcessor {
-	return &PostProcessor{graph: g}
+// NewPostProcessor creates a new post-processor with a dependency graph and ID index.
+// The IDIndex must be built from the same resource order as the import blocks
+// to guarantee consistent Terraform address references.
+func NewPostProcessor(g *graph.DependencyGraph, idx *IDIndex) *PostProcessor {
+	return &PostProcessor{graph: g, idIndex: idx}
 }
 
 // Process takes raw generated HCL content and transforms it.

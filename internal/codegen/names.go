@@ -7,9 +7,9 @@ import (
 )
 
 // NameResolver generates unique, valid Terraform resource names from resources.
-// Both Generator (for import blocks) and PostProcessor (for ID-to-reference mapping)
-// must use the same NameResolver instance over the same ordered resource slice
-// to guarantee name consistency.
+// Generator and PostProcessor each create a fresh NameResolver and call Resolve
+// over the same ordered resource slice. Because Resolve is deterministic,
+// both produce identical names without sharing state.
 type NameResolver struct {
 	counts map[string]int
 }

@@ -33,7 +33,7 @@ func TestOrganizeByService_RegisteredTypes(t *testing.T) {
 	RegisterServiceMapping("aws_s3_bucket", "s3")
 	RegisterServiceMapping("aws_iam_role", "iam")
 
-	pp := NewPostProcessor(graph.New())
+	pp := NewPostProcessor(graph.New(), nil)
 	resources := []types.Resource{
 		{Type: "aws_s3_bucket", ID: "b1"},
 		{Type: "aws_s3_bucket", ID: "b2"},
@@ -50,7 +50,7 @@ func TestOrganizeByService_RegisteredTypes(t *testing.T) {
 }
 
 func TestOrganizeByService_UnregisteredFallsToOther(t *testing.T) {
-	pp := NewPostProcessor(graph.New())
+	pp := NewPostProcessor(graph.New(), nil)
 	resources := []types.Resource{
 		{Type: "aws_unknown_thing", ID: "u1"},
 	}
