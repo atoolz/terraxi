@@ -21,7 +21,7 @@ type Generator struct {
 	outputDir string
 	cfg       discovery.ProviderConfig
 	depGraph  *graph.DependencyGraph
-	nameCount map[string]int
+	names     *NameResolver
 }
 
 // NewGenerator creates a new HCL code generator.
@@ -31,29 +31,13 @@ func NewGenerator(engine types.Engine, outputDir string, cfg discovery.ProviderC
 		outputDir: outputDir,
 		cfg:       cfg,
 		depGraph:  depGraph,
-		nameCount: make(map[string]int),
+		names:     NewNameResolver(),
 	}
-}
-
-// uniqueName returns a deduplicated Terraform resource name.
-// If "my_bucket" was already used, returns "my_bucket_2", "my_bucket_3", etc.
-func (g *Generator) uniqueName(resource types.Resource) string {
-	base := sanitizeName(resource.Name)
-	if base == "" || base == "resource" {
-		base = sanitizeName(resource.ID)
-	}
-
-	g.nameCount[base]++
-	count := g.nameCount[base]
-	if count == 1 {
-		return base
-	}
-	return fmt.Sprintf("%s_%d", base, count)
 }
 
 // GenerateImportBlock creates a Terraform import block for a resource.
 func (g *Generator) GenerateImportBlock(resource types.Resource) string {
-	tfName := g.uniqueName(resource)
+	tfName := g.names.Resolve(resource)
 
 	return fmt.Sprintf(`import {
   to = %s.%s
@@ -65,14 +49,13 @@ func (g *Generator) GenerateImportBlock(resource types.Resource) string {
 // GenerateAll creates import blocks, writes them to disk, runs terraform/tofu
 // import to generate HCL, then post-processes the output.
 func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource) error {
-	// Reset name deduplication state for a clean generation pass
-	g.nameCount = make(map[string]int)
+	// Reset name resolver for a clean generation pass
+	g.names.Reset()
 
 	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Write providers.tf so terraform/tofu can resolve the provider schema
 	if err := g.writeProvidersFile(); err != nil {
 		return fmt.Errorf("failed to write providers.tf: %w", err)
 	}
@@ -95,13 +78,16 @@ func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource)
 		return err
 	}
 
+	// Build ID index with a fresh resolver (same order = same names as import blocks)
+	idIndex := NewIDIndex(resources, NewNameResolver())
+
 	// Post-process the generated HCL
 	rawHCL, err := os.ReadFile(generatedFile)
 	if err != nil {
 		return fmt.Errorf("failed to read generated HCL: %w", err)
 	}
 
-	pp := NewPostProcessor(g.depGraph)
+	pp := NewPostProcessor(g.depGraph, idIndex)
 	processed, err := pp.Process(rawHCL, resources)
 	if err != nil {
 		return fmt.Errorf("post-processing failed: %w", err)
@@ -187,24 +173,4 @@ func (g *Generator) runImport(ctx context.Context, configOut string) error {
 	}
 
 	return nil
-}
-
-// sanitizeName converts a resource ID/name into a valid Terraform resource name.
-func sanitizeName(name string) string {
-	var result []byte
-	for _, c := range []byte(name) {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
-			result = append(result, c)
-		case c == '-', c == '.', c == '/', c == ':':
-			result = append(result, '_')
-		}
-	}
-	if len(result) > 0 && result[0] >= '0' && result[0] <= '9' {
-		result = append([]byte{'r', '_'}, result...)
-	}
-	if len(result) == 0 {
-		return "resource"
-	}
-	return string(result)
 }
