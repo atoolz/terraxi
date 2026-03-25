@@ -20,6 +20,7 @@ import (
 
 type discoverOpts struct {
 	region      string
+	regions     []string
 	profile     string
 	services    []string
 	filter      string
@@ -47,14 +48,16 @@ Examples:
   terraxi discover aws --filter "tags.env=production" --region us-east-1
   terraxi discover aws --dry-run --region us-east-1
   terraxi discover aws --engine tofu --output ./imported
-  terraxi discover aws --region us-east-1 --structure modules`,
+  terraxi discover aws --region us-east-1 --structure modules
+  terraxi discover aws --regions us-east-1,eu-west-1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDiscover(cmd.Context(), args[0], opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.region, "region", "", "Cloud region to scan (required)")
+	cmd.Flags().StringVar(&opts.region, "region", "", "Cloud region to scan")
+	cmd.Flags().StringSliceVar(&opts.regions, "regions", nil, "Multiple regions to scan (comma-separated, e.g., us-east-1,eu-west-1)")
 	cmd.Flags().StringVar(&opts.profile, "profile", "", "AWS profile to use")
 	cmd.Flags().StringSliceVar(&opts.services, "services", nil, "Services to scan (comma-separated, e.g., ec2,s3,iam)")
 	cmd.Flags().StringVar(&opts.filter, "filter", "", "Filter expression (e.g., \"tags.env=production\")")
@@ -66,23 +69,22 @@ Examples:
 	cmd.Flags().StringVar(&opts.format, "format", "table", "Output format: table or json")
 	cmd.Flags().IntVar(&opts.concurrency, "concurrency", 10, "Max concurrent API calls")
 
-	_ = cmd.MarkFlagRequired("region")
+	// region is required unless --regions is provided (validated in runDiscover)
 
 	return cmd
 }
 
 func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) error {
-	provider, err := getProvider(providerName)
-	if err != nil {
-		return err
+	// Resolve regions: --regions takes priority, falls back to --region
+	regions := opts.regions
+	if len(regions) == 0 {
+		if opts.region == "" {
+			return fmt.Errorf("--region or --regions is required")
+		}
+		regions = []string{opts.region}
 	}
-
-	cfg := discovery.ProviderConfig{
-		Region:  opts.region,
-		Profile: opts.profile,
-	}
-	if err := provider.Configure(ctx, cfg); err != nil {
-		return fmt.Errorf("failed to configure %s provider: %w", providerName, err)
+	if opts.region != "" && len(opts.regions) > 0 {
+		slog.Warn("--region is ignored when --regions is provided", "ignored", opts.region)
 	}
 
 	filter, err := buildFilter(opts)
@@ -90,16 +92,48 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 		return fmt.Errorf("invalid filter: %w", err)
 	}
 
-	eng := discovery.NewEngine(provider, opts.concurrency)
+	// Run discovery across all regions, merging results
+	mergedResult := &types.DiscoveryResult{Provider: providerName}
+	seenIAM := make(map[string]bool) // deduplicate global resources across regions
 
-	slog.Info("Starting discovery", "provider", providerName, "region", opts.region)
+	for _, region := range regions {
+		provider, err := getProvider(providerName)
+		if err != nil {
+			return err
+		}
 
-	result, err := eng.Run(ctx, filter)
-	if err != nil {
-		return fmt.Errorf("discovery failed: %w", err)
+		cfg := discovery.ProviderConfig{
+			Region:  region,
+			Profile: opts.profile,
+		}
+		if err := provider.Configure(ctx, cfg); err != nil {
+			return fmt.Errorf("failed to configure %s provider for %s: %w", providerName, region, err)
+		}
+
+		eng := discovery.NewEngine(provider, opts.concurrency)
+		slog.Info("Starting discovery", "provider", providerName, "region", region)
+
+		result, err := eng.Run(ctx, filter)
+		if err != nil {
+			return fmt.Errorf("discovery failed in %s: %w", region, err)
+		}
+
+		for _, r := range result.Resources {
+			// IAM resources are global (Region=""), deduplicate across regions
+			if r.Region == "" {
+				key := r.Type + ":" + r.ID
+				if seenIAM[key] {
+					continue
+				}
+				seenIAM[key] = true
+			}
+			mergedResult.Resources = append(mergedResult.Resources, r)
+		}
+		mergedResult.Errors = append(mergedResult.Errors, result.Errors...)
 	}
 
-	result.Region = opts.region
+	mergedResult.Region = strings.Join(regions, ",")
+	result := mergedResult
 
 	// Write JSON inventory if requested
 	if opts.inventory != "" {
@@ -140,7 +174,8 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 	}
 
 	structure := codegen.Structure(opts.structure)
-	gen := codegen.NewGenerator(iacEngine, opts.outputDir, cfg, depGraph, structure)
+	genCfg := discovery.ProviderConfig{Region: regions[0], Profile: opts.profile}
+	gen := codegen.NewGenerator(iacEngine, opts.outputDir, genCfg, depGraph, structure)
 	if err := gen.GenerateAll(ctx, depGraph.TopologicalSort()); err != nil {
 		return fmt.Errorf("code generation failed: %w", err)
 	}
