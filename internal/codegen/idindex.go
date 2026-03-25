@@ -31,6 +31,9 @@ func NewIDIndex(resources []types.Resource, names *NameResolver) *IDIndex {
 // Lookup returns the Terraform address for a resource ID.
 // Returns (address, true) if found, ("", false) otherwise.
 // The address includes ".id" suffix for use in reference expressions.
+// Note: some attributes expect .arn or .name instead of .id.
+// This is a known simplification for the MVP; attribute-aware
+// suffix selection is planned for a future release.
 func (idx *IDIndex) Lookup(resourceID string) (string, bool) {
 	addr, ok := idx.idToAddress[resourceID]
 	if !ok {

@@ -9,9 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/atoolz/terraxi/internal/codegen/hclutil"
 	"github.com/atoolz/terraxi/internal/discovery"
 	"github.com/atoolz/terraxi/internal/graph"
 	"github.com/atoolz/terraxi/pkg/types"
+)
+
+// Structure defines how generated files are organized.
+type Structure string
+
+const (
+	StructureFlat    Structure = "flat"
+	StructureModules Structure = "modules"
 )
 
 // Generator handles delegating HCL generation to terraform/tofu import
@@ -22,16 +31,21 @@ type Generator struct {
 	cfg       discovery.ProviderConfig
 	depGraph  *graph.DependencyGraph
 	names     *NameResolver
+	structure Structure
 }
 
 // NewGenerator creates a new HCL code generator.
-func NewGenerator(engine types.Engine, outputDir string, cfg discovery.ProviderConfig, depGraph *graph.DependencyGraph) *Generator {
+func NewGenerator(engine types.Engine, outputDir string, cfg discovery.ProviderConfig, depGraph *graph.DependencyGraph, structure Structure) *Generator {
+	if structure == "" {
+		structure = StructureFlat
+	}
 	return &Generator{
 		engine:    engine,
 		outputDir: outputDir,
 		cfg:       cfg,
 		depGraph:  depGraph,
 		names:     NewNameResolver(),
+		structure: structure,
 	}
 }
 
@@ -49,7 +63,6 @@ func (g *Generator) GenerateImportBlock(resource types.Resource) string {
 // GenerateAll creates import blocks, writes them to disk, runs terraform/tofu
 // import to generate HCL, then post-processes the output.
 func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource) error {
-	// Reset name resolver for a clean generation pass
 	g.names.Reset()
 
 	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
@@ -60,7 +73,7 @@ func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource)
 		return fmt.Errorf("failed to write providers.tf: %w", err)
 	}
 
-	// Collect and write import blocks to imports.tf
+	// Collect and write import blocks
 	var buf strings.Builder
 	for _, r := range resources {
 		buf.WriteString(g.GenerateImportBlock(r))
@@ -72,13 +85,13 @@ func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource)
 		return fmt.Errorf("failed to write import blocks: %w", err)
 	}
 
-	// Run terraform/tofu plan -generate-config-out to produce raw HCL
+	// Run terraform/tofu plan -generate-config-out
 	generatedFile := filepath.Join(g.outputDir, "generated.tf")
 	if err := g.runImport(ctx, generatedFile); err != nil {
 		return err
 	}
 
-	// Build ID index with a fresh resolver (same order = same names as import blocks)
+	// Build ID index with a fresh resolver (same order = same names)
 	idIndex := NewIDIndex(resources, NewNameResolver())
 
 	// Post-process the generated HCL
@@ -93,11 +106,37 @@ func (g *Generator) GenerateAll(ctx context.Context, resources []types.Resource)
 		return fmt.Errorf("post-processing failed: %w", err)
 	}
 
-	if err := os.WriteFile(generatedFile, processed, 0644); err != nil {
-		return fmt.Errorf("failed to write post-processed HCL: %w", err)
+	// Write variables.tf
+	varsContent := pp.ExtractVariables(nil, g.cfg.Region)
+	if len(varsContent) > 0 {
+		varsFile := filepath.Join(g.outputDir, "variables.tf")
+		if err := os.WriteFile(varsFile, varsContent, 0644); err != nil {
+			return fmt.Errorf("failed to write variables.tf: %w", err)
+		}
 	}
 
-	// Best-effort cleanup; not fatal if it fails
+	// Structure: flat (single file) or modules (per-service subdirectories)
+	if g.structure == StructureModules {
+		parsedFile, parseErr := hclutil.ParseFile(processed)
+		if parseErr != nil {
+			slog.Warn("Failed to parse for module split, writing flat", "error", parseErr)
+			if err := os.WriteFile(generatedFile, processed, 0644); err != nil {
+				return fmt.Errorf("failed to write generated HCL: %w", err)
+			}
+		} else {
+			if err := pp.SplitByService(parsedFile, g.outputDir); err != nil {
+				return fmt.Errorf("failed to split by service: %w", err)
+			}
+			// Remove the flat generated.tf (now split into subdirs)
+			_ = os.Remove(generatedFile)
+		}
+	} else {
+		if err := os.WriteFile(generatedFile, processed, 0644); err != nil {
+			return fmt.Errorf("failed to write post-processed HCL: %w", err)
+		}
+	}
+
+	// Best-effort cleanup
 	_ = os.Remove(importsFile)
 
 	return nil
@@ -142,7 +181,6 @@ provider "aws" {
 }
 
 // terraformInitNeeded checks if providers are already downloaded.
-// Uses .terraform.lock.hcl as the canonical signal of a completed init.
 func (g *Generator) terraformInitNeeded() bool {
 	lockFile := filepath.Join(g.outputDir, ".terraform.lock.hcl")
 	_, err := os.Stat(lockFile)
@@ -153,7 +191,6 @@ func (g *Generator) terraformInitNeeded() bool {
 func (g *Generator) runImport(ctx context.Context, configOut string) error {
 	binary := string(g.engine)
 
-	// Skip init if providers are already cached
 	if g.terraformInitNeeded() {
 		slog.Info("Running terraform init (downloading provider)...")
 		initCmd := exec.CommandContext(ctx, binary, "init")
@@ -165,7 +202,6 @@ func (g *Generator) runImport(ctx context.Context, configOut string) error {
 		slog.Debug("Skipping terraform init (providers cached)")
 	}
 
-	// terraform plan -generate-config-out
 	planCmd := exec.CommandContext(ctx, binary, "plan", "-generate-config-out="+configOut)
 	planCmd.Dir = g.outputDir
 	if out, err := planCmd.CombinedOutput(); err != nil {

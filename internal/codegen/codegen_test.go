@@ -11,7 +11,7 @@ import (
 // Note: sanitizeName and NameResolver tests are in names_test.go
 
 func TestGenerateImportBlock(t *testing.T) {
-	g := NewGenerator(types.EngineTerraform, "/tmp/test", discovery.ProviderConfig{Region: "us-east-1"}, graph.New())
+	g := NewGenerator(types.EngineTerraform, "/tmp/test", discovery.ProviderConfig{Region: "us-east-1"}, graph.New(), "")
 
 	block := g.GenerateImportBlock(types.Resource{
 		Type: "aws_s3_bucket",
