@@ -24,7 +24,9 @@ type Provider interface {
 
 // ProviderConfig holds configuration for a cloud provider.
 type ProviderConfig struct {
-	Region  string            `json:"region"`
-	Profile string            `json:"profile,omitempty"`
-	Extra   map[string]string `json:"extra,omitempty"`
+	Region     string            `json:"region"`
+	Profile    string            `json:"profile,omitempty"`
+	AssumeRole string            `json:"assume_role,omitempty"`
+	ExternalID string            `json:"external_id,omitempty"`
+	Extra      map[string]string `json:"extra,omitempty"`
 }
