@@ -3,8 +3,8 @@ package codegen
 import (
 	"sync"
 
-	"github.com/ahlert/terraxi/internal/graph"
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/internal/graph"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // PostProcessor transforms raw generated HCL into production-quality code.

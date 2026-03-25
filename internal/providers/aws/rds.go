@@ -9,8 +9,8 @@ import (
 	awsutil "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 
-	"github.com/ahlert/terraxi/internal/discovery"
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/internal/discovery"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 func init() {

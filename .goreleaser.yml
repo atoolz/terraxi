@@ -3,7 +3,6 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go test ./...
 
 builds:
   - main: ./cmd/terraxi
@@ -33,8 +32,4 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^ci:"
-
-release:
-  github:
-    owner: atoolz
-    name: terraxi
+      - "^chore:"

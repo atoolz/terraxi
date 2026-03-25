@@ -3,7 +3,7 @@ package graph
 import (
 	"sort"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // DependencyGraph tracks relationships between discovered resources.

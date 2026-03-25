@@ -19,9 +19,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/ahlert/terraxi/internal/codegen"
-	"github.com/ahlert/terraxi/internal/discovery"
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/internal/codegen"
+	"github.com/atoolz/terraxi/internal/discovery"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // Provider discovers AWS resources.

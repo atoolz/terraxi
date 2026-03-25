@@ -3,9 +3,9 @@ package codegen
 import (
 	"testing"
 
-	"github.com/ahlert/terraxi/internal/discovery"
-	"github.com/ahlert/terraxi/internal/graph"
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/internal/discovery"
+	"github.com/atoolz/terraxi/internal/graph"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 func TestSanitizeName(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ahlert/terraxi/cmd/terraxi/commands"
+	"github.com/atoolz/terraxi/cmd/terraxi/commands"
 )
 
 var version = "dev"

@@ -9,12 +9,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ahlert/terraxi/internal/codegen"
-	"github.com/ahlert/terraxi/internal/discovery"
-	"github.com/ahlert/terraxi/internal/graph"
-	"github.com/ahlert/terraxi/internal/output"
-	awsprovider "github.com/ahlert/terraxi/internal/providers/aws"
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/internal/codegen"
+	"github.com/atoolz/terraxi/internal/discovery"
+	"github.com/atoolz/terraxi/internal/graph"
+	"github.com/atoolz/terraxi/internal/output"
+	awsprovider "github.com/atoolz/terraxi/internal/providers/aws"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 type discoverOpts struct {

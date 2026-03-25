@@ -3,7 +3,7 @@ package discovery
 import (
 	"testing"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 func TestParseFilter_Empty(t *testing.T) {
