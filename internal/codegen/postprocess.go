@@ -45,6 +45,9 @@ func (pp *PostProcessor) Process(rawHCL []byte, resources []types.Resource) ([]b
 	// Pass 1: Replace hardcoded IDs with references
 	pp.replaceIDs(f)
 
+	// Pass 2: Collapse repeated resources into for_each
+	CollapseForEach(f)
+
 	return hclutil.FormatFile(f), nil
 }
 
