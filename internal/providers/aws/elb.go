@@ -109,21 +109,56 @@ func discoverTargetGroups(ctx context.Context, p *Provider, filter types.Filter)
 			return nil, fmt.Errorf("describing target groups: %w", err)
 		}
 
+		// Fetch tags for target groups in this page
+		var tgArns []string
 		for _, tg := range out.TargetGroups {
+			if tg.TargetGroupArn != nil {
+				tgArns = append(tgArns, *tg.TargetGroupArn)
+			}
+		}
+
+		tgTagMap := map[string]map[string]string{}
+		if len(tgArns) > 0 {
+			tagOut, tagErr := p.elb.DescribeTags(ctx, &elasticloadbalancingv2.DescribeTagsInput{
+				ResourceArns: tgArns,
+			})
+			if tagErr == nil {
+				for _, desc := range tagOut.TagDescriptions {
+					tags := make(map[string]string, len(desc.Tags))
+					for _, t := range desc.Tags {
+						tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
+					}
+					tgTagMap[awsutil.ToString(desc.ResourceArn)] = tags
+				}
+			}
+		}
+
+		for _, tg := range out.TargetGroups {
+			arn := awsutil.ToString(tg.TargetGroupArn)
+			tags := tgTagMap[arn]
+			if tags == nil {
+				tags = map[string]string{}
+			}
+
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
 			r := types.Resource{
 				Type:   "aws_lb_target_group",
-				ID:     awsutil.ToString(tg.TargetGroupArn),
+				ID:     arn,
 				Name:   awsutil.ToString(tg.TargetGroupName),
 				Region: p.region,
+				Tags:   tags,
 			}
 			if tg.VpcId != nil {
 				r.Dependencies = append(r.Dependencies, types.ResourceRef{
 					Type: "aws_vpc", ID: *tg.VpcId,
 				})
 			}
-			for _, arn := range tg.LoadBalancerArns {
+			for _, lbArn := range tg.LoadBalancerArns {
 				r.Dependencies = append(r.Dependencies, types.ResourceRef{
-					Type: "aws_lb", ID: arn,
+					Type: "aws_lb", ID: lbArn,
 				})
 			}
 			resources = append(resources, r)

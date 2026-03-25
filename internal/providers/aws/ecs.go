@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
+	"github.com/ahlert/terraxi/internal/discovery"
 	"github.com/ahlert/terraxi/pkg/types"
 )
 
@@ -64,6 +65,10 @@ func discoverECSClusters(ctx context.Context, p *Provider, filter types.Filter) 
 			tags := make(map[string]string, len(c.Tags))
 			for _, t := range c.Tags {
 				tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
+			}
+
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
 			}
 
 			resources = append(resources, types.Resource{
