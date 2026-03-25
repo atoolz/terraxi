@@ -20,6 +20,7 @@ func TestIsAccessDenied(t *testing.T) {
 		{apiError("UnauthorizedOperation", "no"), true},
 		{apiError("AccessDeniedException", "denied"), true},
 		{apiError("InvalidClientTokenId", "bad token"), true},
+		{apiError("NoCredentialProviders", "no creds"), false},
 		{apiError("NoSuchBucket", "not found"), false},
 		{fmt.Errorf("random error"), false},
 	}

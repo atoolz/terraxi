@@ -13,7 +13,7 @@ func isAccessDenied(err error) bool {
 	if errors.As(err, &ae) {
 		switch ae.ErrorCode() {
 		case "AccessDenied", "UnauthorizedOperation", "AccessDeniedException",
-			"NoCredentialProviders", "InvalidClientTokenId":
+			"InvalidClientTokenId":
 			return true
 		}
 	}
@@ -46,7 +46,7 @@ func isThrottled(err error) bool {
 	if errors.As(err, &ae) {
 		switch ae.ErrorCode() {
 		case "Throttling", "ThrottlingException", "RequestLimitExceeded",
-			"TooManyRequestsException", "Rate exceeded":
+			"TooManyRequestsException":
 			return true
 		}
 	}

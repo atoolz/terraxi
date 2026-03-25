@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
@@ -97,8 +98,8 @@ func (p *Provider) Configure(ctx context.Context, cfg discovery.ProviderConfig) 
 		return fmt.Errorf("AWS credential validation failed: %w", err)
 	}
 	slog.Info("AWS credentials validated",
-		"account", *identity.Account,
-		"arn", *identity.Arn,
+		"account", aws.ToString(identity.Account),
+		"arn", aws.ToString(identity.Arn),
 		"region", p.region,
 	)
 

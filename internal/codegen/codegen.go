@@ -156,13 +156,11 @@ provider "aws" {
 }
 
 // terraformInitNeeded checks if providers are already downloaded.
+// Uses .terraform.lock.hcl as the canonical signal of a completed init.
 func (g *Generator) terraformInitNeeded() bool {
-	providersDir := filepath.Join(g.outputDir, ".terraform", "providers")
-	info, err := os.Stat(providersDir)
-	if err != nil {
-		return true
-	}
-	return !info.IsDir()
+	lockFile := filepath.Join(g.outputDir, ".terraform.lock.hcl")
+	_, err := os.Stat(lockFile)
+	return os.IsNotExist(err)
 }
 
 // runImport executes terraform or tofu to generate HCL from import blocks.
