@@ -28,6 +28,7 @@ type stateEntry struct {
 }
 
 type stateInstance struct {
+	IndexKey       interface{}       `json:"index_key"`
 	Attributes     json.RawMessage   `json:"attributes"`
 	AttributesFlat map[string]string `json:"attributes_flat"`
 }
@@ -61,10 +62,14 @@ func ParseState(data []byte) ([]StateResource, error) {
 
 		for _, inst := range entry.Instances {
 			id := extractIDFromAttributes(inst.Attributes)
+			addr := fmt.Sprintf("%s.%s", entry.Type, entry.Name)
+			if inst.IndexKey != nil {
+				addr = fmt.Sprintf("%s.%s[%v]", entry.Type, entry.Name, inst.IndexKey)
+			}
 			resources = append(resources, StateResource{
 				Type:    entry.Type,
 				Name:    entry.Name,
-				Address: fmt.Sprintf("%s.%s", entry.Type, entry.Name),
+				Address: addr,
 				ID:      id,
 			})
 		}

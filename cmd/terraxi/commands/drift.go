@@ -85,11 +85,29 @@ func runDrift(ctx context.Context, providerName string, opts *driftOpts) error {
 	// Analyze drift
 	report := drift.Analyze(result.Resources, stateResources)
 
+	// Write HTML report if requested (before format-specific output)
+	if opts.report != "" {
+		htmlBytes, htmlErr := drift.RenderHTML(report)
+		if htmlErr != nil {
+			return fmt.Errorf("failed to render HTML report: %w", htmlErr)
+		}
+		if writeErr := os.WriteFile(opts.report, htmlBytes, 0644); writeErr != nil {
+			return fmt.Errorf("failed to write report: %w", writeErr)
+		}
+		slog.Info("HTML report written", "path", opts.report)
+	}
+
 	// Output
 	if opts.format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(report)
+		if err := enc.Encode(report); err != nil {
+			return err
+		}
+		if report.HasDrift() {
+			return fmt.Errorf("drift detected: %s", report.Summary())
+		}
+		return nil
 	}
 
 	// Table output
@@ -123,18 +141,6 @@ func runDrift(ctx context.Context, providerName string, opts *driftOpts) error {
 
 	if !report.HasDrift() {
 		_, _ = fmt.Fprintf(os.Stdout, "No drift detected. All resources are managed.\n")
-	}
-
-	// Write HTML report if requested
-	if opts.report != "" {
-		htmlBytes, err := drift.RenderHTML(report)
-		if err != nil {
-			return fmt.Errorf("failed to render HTML report: %w", err)
-		}
-		if err := os.WriteFile(opts.report, htmlBytes, 0644); err != nil {
-			return fmt.Errorf("failed to write report: %w", err)
-		}
-		slog.Info("HTML report written", "path", opts.report)
 	}
 
 	// Exit with error if drift detected (CI-friendly)

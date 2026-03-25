@@ -69,6 +69,80 @@ func TestParseState_EmptyState(t *testing.T) {
 	}
 }
 
+func TestParseState_CountInstances(t *testing.T) {
+	data := []byte(`{
+  "version": 4,
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "instances": [
+        {
+          "index_key": 0,
+          "attributes": { "id": "i-aaa111" }
+        },
+        {
+          "index_key": 1,
+          "attributes": { "id": "i-bbb222" }
+        }
+      ]
+    }
+  ]
+}`)
+
+	resources, err := ParseState(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resources) != 2 {
+		t.Fatalf("expected 2 instances, got %d", len(resources))
+	}
+	if resources[0].Address != "aws_instance.web[0]" {
+		t.Errorf("expected aws_instance.web[0], got %s", resources[0].Address)
+	}
+	if resources[1].Address != "aws_instance.web[1]" {
+		t.Errorf("expected aws_instance.web[1], got %s", resources[1].Address)
+	}
+}
+
+func TestParseState_ForEachInstances(t *testing.T) {
+	data := []byte(`{
+  "version": 4,
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "data",
+      "instances": [
+        {
+          "index_key": "logs",
+          "attributes": { "id": "my-logs-bucket" }
+        },
+        {
+          "index_key": "assets",
+          "attributes": { "id": "my-assets-bucket" }
+        }
+      ]
+    }
+  ]
+}`)
+
+	resources, err := ParseState(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resources) != 2 {
+		t.Fatalf("expected 2 instances, got %d", len(resources))
+	}
+	if resources[0].Address != "aws_s3_bucket.data[logs]" {
+		t.Errorf("expected aws_s3_bucket.data[logs], got %s", resources[0].Address)
+	}
+	if resources[1].Address != "aws_s3_bucket.data[assets]" {
+		t.Errorf("expected aws_s3_bucket.data[assets], got %s", resources[1].Address)
+	}
+}
+
 func TestStateIndex(t *testing.T) {
 	resources := []StateResource{
 		{Type: "aws_vpc", Name: "main", ID: "vpc-abc123"},
