@@ -83,6 +83,9 @@ func runDiscover(ctx context.Context, providerName string, opts *discoverOpts) e
 		}
 		regions = []string{opts.region}
 	}
+	if opts.region != "" && len(opts.regions) > 0 {
+		slog.Warn("--region is ignored when --regions is provided", "ignored", opts.region)
+	}
 
 	filter, err := buildFilter(opts)
 	if err != nil {
