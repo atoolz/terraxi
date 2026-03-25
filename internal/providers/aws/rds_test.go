@@ -35,7 +35,10 @@ func (m *mockRDS) DescribeDBParameterGroups(ctx context.Context, input *rds.Desc
 	return m.describeDBParameterGroupsFn(ctx, input, optFns...)
 }
 func (m *mockRDS) ListTagsForResource(ctx context.Context, input *rds.ListTagsForResourceInput, optFns ...func(*rds.Options)) (*rds.ListTagsForResourceOutput, error) {
-	return m.listTagsForResourceFn(ctx, input, optFns...)
+	if m.listTagsForResourceFn != nil {
+		return m.listTagsForResourceFn(ctx, input, optFns...)
+	}
+	return &rds.ListTagsForResourceOutput{}, nil
 }
 
 func TestDiscoverRDSInstances_WithDependencies(t *testing.T) {

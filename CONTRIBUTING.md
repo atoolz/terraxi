@@ -27,13 +27,25 @@ type EC2API interface {
 }
 ```
 
-### 2. Register the resource type
+### 2. Register the resource type (TWO places, both required)
 
-Edit `internal/providers/aws/provider.go` and add the type to `ListResourceTypes()`:
+**Both** registrations are mandatory. Missing either one causes silent failures.
+
+**2a.** Edit `internal/providers/aws/provider.go` and add to `ListResourceTypes()`:
 
 ```go
 {Type: "aws_new_thing", Service: "ec2", Description: "New things"},
 ```
+
+**2b.** In your discoverer file (step 3), register via `init()`:
+
+```go
+func init() {
+    RegisterDiscoverer("aws_new_thing", discoverNewThings)
+}
+```
+
+If you add to `ListResourceTypes()` but forget the `init()` call, the engine will error with "unsupported resource type" at runtime. There is no compile-time check for this.
 
 ### 3. Implement the discoverer
 

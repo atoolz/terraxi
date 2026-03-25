@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -124,5 +125,40 @@ func TestDiscoverSecurityGroups_WithVPCDependency(t *testing.T) {
 	}
 	if len(resources[0].Dependencies) != 1 || resources[0].Dependencies[0].Type != "aws_vpc" {
 		t.Errorf("expected VPC dependency, got %v", resources[0].Dependencies)
+	}
+}
+
+func TestDiscoverSecurityGroupRules(t *testing.T) {
+	isEgress := true
+	p := NewWithClients("us-east-1", WithEC2(&mockEC2{
+		describeSecurityGroupRulesFn: func(_ context.Context, _ *ec2.DescribeSecurityGroupRulesInput, _ ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupRulesOutput, error) {
+			return &ec2.DescribeSecurityGroupRulesOutput{
+				SecurityGroupRules: []ec2types.SecurityGroupRule{
+					{
+						SecurityGroupRuleId: ptr("sgr-111"),
+						GroupId:             ptr("sg-222"),
+						IsEgress:            &isEgress,
+					},
+				},
+			}, nil
+		},
+	}))
+
+	resources, err := discoverSecurityGroupRules(context.Background(), p, types.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(resources))
+	}
+	r := resources[0]
+	if r.ID != "sgr-111" {
+		t.Errorf("expected sgr-111, got %s", r.ID)
+	}
+	if len(r.Dependencies) != 1 || r.Dependencies[0].ID != "sg-222" {
+		t.Errorf("expected SG dependency, got %v", r.Dependencies)
+	}
+	if !strings.Contains(r.Name, "egress") {
+		t.Errorf("expected egress in name, got %s", r.Name)
 	}
 }
