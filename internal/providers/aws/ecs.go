@@ -53,7 +53,10 @@ func discoverECSClusters(ctx context.Context, p *Provider, filter types.Filter) 
 		}
 		batch := allArns[i:end]
 
-		desc, err := p.ecs.DescribeClusters(ctx, &ecs.DescribeClustersInput{Clusters: batch})
+		desc, err := p.ecs.DescribeClusters(ctx, &ecs.DescribeClustersInput{
+			Clusters: batch,
+			Include:  []ecstypes.ClusterField{ecstypes.ClusterFieldTags},
+		})
 		if err != nil {
 			if isAccessDenied(err) {
 				return nil, fmt.Errorf("insufficient permissions for ecs:DescribeClusters: %w", err)
@@ -131,6 +134,7 @@ func discoverECSServices(ctx context.Context, p *Provider, filter types.Filter) 
 			desc, err := p.ecs.DescribeServices(ctx, &ecs.DescribeServicesInput{
 				Cluster:  &clusterArn,
 				Services: batch,
+				Include:  []ecstypes.ServiceField{ecstypes.ServiceFieldTags},
 			})
 			if err != nil {
 				if isAccessDenied(err) {
@@ -145,7 +149,10 @@ func discoverECSServices(ctx context.Context, p *Provider, filter types.Filter) 
 					tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
 				}
 
-				// Import ID for ECS service: cluster/service-name
+				if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+					continue
+				}
+
 				r := types.Resource{
 					Type:   "aws_ecs_service",
 					ID:     fmt.Sprintf("%s/%s", cluster.Name, awsutil.ToString(svc.ServiceName)),
@@ -198,6 +205,7 @@ func discoverECSTaskDefinitions(ctx context.Context, p *Provider, filter types.F
 	for _, arn := range allArns {
 		desc, err := p.ecs.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
 			TaskDefinition: &arn,
+			Include:        []ecstypes.TaskDefinitionField{ecstypes.TaskDefinitionFieldTags},
 		})
 		if err != nil {
 			if isAccessDenied(err) || isNotFound(err) {
@@ -214,6 +222,10 @@ func discoverECSTaskDefinitions(ctx context.Context, p *Provider, filter types.F
 		tags := make(map[string]string, len(desc.Tags))
 		for _, t := range desc.Tags {
 			tags[awsutil.ToString(t.Key)] = awsutil.ToString(t.Value)
+		}
+
+		if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+			continue
 		}
 
 		r := types.Resource{

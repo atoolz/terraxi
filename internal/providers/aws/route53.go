@@ -19,8 +19,10 @@ func init() {
 }
 
 // Route53 zones and records do not support inline tag filtering via ListHostedZones/ListResourceRecordSets.
-// Tag filtering is silently not applied for Route53 resources.
 func discoverRoute53Zones(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
+	if len(filter.Tags) > 0 {
+		slog.Warn("Tag filtering not supported for Route53 resources (ListHostedZones does not return tags). Returning all zones.")
+	}
 	var resources []types.Resource
 	var marker *string
 
