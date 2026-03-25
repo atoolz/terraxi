@@ -73,6 +73,15 @@ terraxi discover aws --region us-east-1 --format json
 
 # Custom output directory
 terraxi discover aws --region us-east-1 -o ./infrastructure
+
+# Multi-region discovery
+terraxi discover aws --regions us-east-1,eu-west-1,ap-southeast-1
+
+# Generate per-service module directories
+terraxi discover aws --region us-east-1 --structure modules
+
+# Save discovery inventory as JSON
+terraxi discover aws --region us-east-1 --inventory ./inventory.json
 ```
 
 ### AWS Credentials
@@ -109,15 +118,15 @@ imported/
 └── variables.tf           # Extracted variables (region, common tags)
 ```
 
-## Supported Resource Types (MVP)
+## Supported Resource Types
 
 | Service | Resources |
 |---------|-----------|
-| **EC2** | Instances, Security Groups, Key Pairs, EBS Volumes, Elastic IPs |
+| **EC2** | Instances, Security Groups, Security Group Rules, Key Pairs, EBS Volumes, Elastic IPs |
 | **VPC** | VPCs, Subnets, Route Tables, NAT Gateways, Internet Gateways |
 | **S3** | Buckets (with policies, ACLs, versioning, lifecycle) |
 | **IAM** | Roles, Policies, Users, Groups, Instance Profiles |
-| **RDS** | Instances, Clusters, Subnet Groups, Parameter Groups |
+| **RDS** | Instances, Aurora Clusters, Subnet Groups, Parameter Groups |
 | **ELB** | Load Balancers (ALB/NLB), Target Groups, Listeners |
 | **Route53** | Hosted Zones, DNS Records |
 | **Lambda** | Functions, Layers |
