@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -11,16 +12,17 @@ import (
 )
 
 type mockEC2 struct {
-	describeInstancesFn        func(ctx context.Context, input *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
-	describeSecurityGroupsFn   func(ctx context.Context, input *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
-	describeVolumesFn          func(ctx context.Context, input *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error)
-	describeAddressesFn        func(ctx context.Context, input *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error)
-	describeKeyPairsFn         func(ctx context.Context, input *ec2.DescribeKeyPairsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeKeyPairsOutput, error)
-	describeVpcsFn             func(ctx context.Context, input *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
-	describeSubnetsFn          func(ctx context.Context, input *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
-	describeRouteTablesFn      func(ctx context.Context, input *ec2.DescribeRouteTablesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error)
-	describeNatGatewaysFn      func(ctx context.Context, input *ec2.DescribeNatGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNatGatewaysOutput, error)
-	describeInternetGatewaysFn func(ctx context.Context, input *ec2.DescribeInternetGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInternetGatewaysOutput, error)
+	describeInstancesFn          func(ctx context.Context, input *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	describeSecurityGroupsFn     func(ctx context.Context, input *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
+	describeVolumesFn            func(ctx context.Context, input *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error)
+	describeAddressesFn          func(ctx context.Context, input *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error)
+	describeKeyPairsFn           func(ctx context.Context, input *ec2.DescribeKeyPairsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeKeyPairsOutput, error)
+	describeVpcsFn               func(ctx context.Context, input *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error)
+	describeSubnetsFn            func(ctx context.Context, input *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
+	describeRouteTablesFn        func(ctx context.Context, input *ec2.DescribeRouteTablesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error)
+	describeNatGatewaysFn        func(ctx context.Context, input *ec2.DescribeNatGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNatGatewaysOutput, error)
+	describeInternetGatewaysFn   func(ctx context.Context, input *ec2.DescribeInternetGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInternetGatewaysOutput, error)
+	describeSecurityGroupRulesFn func(ctx context.Context, input *ec2.DescribeSecurityGroupRulesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupRulesOutput, error)
 }
 
 func (m *mockEC2) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
@@ -52,6 +54,9 @@ func (m *mockEC2) DescribeNatGateways(ctx context.Context, input *ec2.DescribeNa
 }
 func (m *mockEC2) DescribeInternetGateways(ctx context.Context, input *ec2.DescribeInternetGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInternetGatewaysOutput, error) {
 	return m.describeInternetGatewaysFn(ctx, input, optFns...)
+}
+func (m *mockEC2) DescribeSecurityGroupRules(ctx context.Context, input *ec2.DescribeSecurityGroupRulesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupRulesOutput, error) {
+	return m.describeSecurityGroupRulesFn(ctx, input, optFns...)
 }
 
 func TestDiscoverEC2Instances(t *testing.T) {
@@ -120,5 +125,40 @@ func TestDiscoverSecurityGroups_WithVPCDependency(t *testing.T) {
 	}
 	if len(resources[0].Dependencies) != 1 || resources[0].Dependencies[0].Type != "aws_vpc" {
 		t.Errorf("expected VPC dependency, got %v", resources[0].Dependencies)
+	}
+}
+
+func TestDiscoverSecurityGroupRules(t *testing.T) {
+	isEgress := true
+	p := NewWithClients("us-east-1", WithEC2(&mockEC2{
+		describeSecurityGroupRulesFn: func(_ context.Context, _ *ec2.DescribeSecurityGroupRulesInput, _ ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupRulesOutput, error) {
+			return &ec2.DescribeSecurityGroupRulesOutput{
+				SecurityGroupRules: []ec2types.SecurityGroupRule{
+					{
+						SecurityGroupRuleId: ptr("sgr-111"),
+						GroupId:             ptr("sg-222"),
+						IsEgress:            &isEgress,
+					},
+				},
+			}, nil
+		},
+	}))
+
+	resources, err := discoverSecurityGroupRules(context.Background(), p, types.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(resources))
+	}
+	r := resources[0]
+	if r.ID != "sgr-111" {
+		t.Errorf("expected sgr-111, got %s", r.ID)
+	}
+	if len(r.Dependencies) != 1 || r.Dependencies[0].ID != "sg-222" {
+		t.Errorf("expected SG dependency, got %v", r.Dependencies)
+	}
+	if !strings.Contains(r.Name, "egress") {
+		t.Errorf("expected egress in name, got %s", r.Name)
 	}
 }

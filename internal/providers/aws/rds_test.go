@@ -13,6 +13,7 @@ import (
 
 type mockRDS struct {
 	describeDBInstancesFn       func(ctx context.Context, input *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error)
+	describeDBClustersFn        func(ctx context.Context, input *rds.DescribeDBClustersInput, optFns ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error)
 	describeDBSubnetGroupsFn    func(ctx context.Context, input *rds.DescribeDBSubnetGroupsInput, optFns ...func(*rds.Options)) (*rds.DescribeDBSubnetGroupsOutput, error)
 	describeDBParameterGroupsFn func(ctx context.Context, input *rds.DescribeDBParameterGroupsInput, optFns ...func(*rds.Options)) (*rds.DescribeDBParameterGroupsOutput, error)
 	listTagsForResourceFn       func(ctx context.Context, input *rds.ListTagsForResourceInput, optFns ...func(*rds.Options)) (*rds.ListTagsForResourceOutput, error)
@@ -21,6 +22,12 @@ type mockRDS struct {
 func (m *mockRDS) DescribeDBInstances(ctx context.Context, input *rds.DescribeDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeDBInstancesOutput, error) {
 	return m.describeDBInstancesFn(ctx, input, optFns...)
 }
+func (m *mockRDS) DescribeDBClusters(ctx context.Context, input *rds.DescribeDBClustersInput, optFns ...func(*rds.Options)) (*rds.DescribeDBClustersOutput, error) {
+	if m.describeDBClustersFn != nil {
+		return m.describeDBClustersFn(ctx, input, optFns...)
+	}
+	return &rds.DescribeDBClustersOutput{}, nil
+}
 func (m *mockRDS) DescribeDBSubnetGroups(ctx context.Context, input *rds.DescribeDBSubnetGroupsInput, optFns ...func(*rds.Options)) (*rds.DescribeDBSubnetGroupsOutput, error) {
 	return m.describeDBSubnetGroupsFn(ctx, input, optFns...)
 }
@@ -28,7 +35,10 @@ func (m *mockRDS) DescribeDBParameterGroups(ctx context.Context, input *rds.Desc
 	return m.describeDBParameterGroupsFn(ctx, input, optFns...)
 }
 func (m *mockRDS) ListTagsForResource(ctx context.Context, input *rds.ListTagsForResourceInput, optFns ...func(*rds.Options)) (*rds.ListTagsForResourceOutput, error) {
-	return m.listTagsForResourceFn(ctx, input, optFns...)
+	if m.listTagsForResourceFn != nil {
+		return m.listTagsForResourceFn(ctx, input, optFns...)
+	}
+	return &rds.ListTagsForResourceOutput{}, nil
 }
 
 func TestDiscoverRDSInstances_WithDependencies(t *testing.T) {

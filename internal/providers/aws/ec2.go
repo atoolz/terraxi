@@ -15,6 +15,7 @@ import (
 func init() {
 	RegisterDiscoverer("aws_instance", discoverEC2Instances)
 	RegisterDiscoverer("aws_security_group", discoverSecurityGroups)
+	RegisterDiscoverer("aws_security_group_rule", discoverSecurityGroupRules)
 	RegisterDiscoverer("aws_ebs_volume", discoverEBSVolumes)
 	RegisterDiscoverer("aws_eip", discoverElasticIPs)
 	RegisterDiscoverer("aws_key_pair", discoverKeyPairs)
@@ -228,5 +229,56 @@ func discoverKeyPairs(ctx context.Context, p *Provider, filter types.Filter) ([]
 	}
 
 	slog.Debug("Key pairs discovery complete", "count", len(resources))
+	return resources, nil
+}
+
+func discoverSecurityGroupRules(ctx context.Context, p *Provider, filter types.Filter) ([]types.Resource, error) {
+	var resources []types.Resource
+	var nextToken *string
+
+	for {
+		out, err := p.ec2.DescribeSecurityGroupRules(ctx, &ec2.DescribeSecurityGroupRulesInput{NextToken: nextToken})
+		if err != nil {
+			if isAccessDenied(err) {
+				return nil, fmt.Errorf("insufficient permissions for ec2:DescribeSecurityGroupRules: %w", err)
+			}
+			return nil, fmt.Errorf("describing security group rules: %w", err)
+		}
+
+		for _, rule := range out.SecurityGroupRules {
+			id := awsutil.ToString(rule.SecurityGroupRuleId)
+			sgID := awsutil.ToString(rule.GroupId)
+
+			tags := ec2TagsToMap(rule.Tags)
+			if !discovery.MatchesTags(types.Resource{Tags: tags}, filter.Tags) {
+				continue
+			}
+
+			direction := "ingress"
+			if rule.IsEgress != nil && *rule.IsEgress {
+				direction = "egress"
+			}
+
+			r := types.Resource{
+				Type:   "aws_security_group_rule",
+				ID:     id,
+				Name:   fmt.Sprintf("%s-%s-%s", sgID, direction, id),
+				Region: p.region,
+				Tags:   tags,
+				Dependencies: []types.ResourceRef{
+					{Type: "aws_security_group", ID: sgID},
+				},
+			}
+
+			resources = append(resources, r)
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	slog.Debug("Security group rules discovery complete", "count", len(resources))
 	return resources, nil
 }
