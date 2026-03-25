@@ -7,12 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/atoolz/terraxi/internal/codegen/hclutil"
+	"github.com/atoolz/terraxi/internal/graph"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
-// TestValidateGeneratedHCL is an integration test that requires terraform or tofu
-// to be installed. Run with: go test -tags integration ./internal/codegen/
+// TestValidateGeneratedHCL is an integration test that requires terraform or tofu.
+// Run with: go test -tags integration ./internal/codegen/ -v
 func TestValidateGeneratedHCL(t *testing.T) {
-	// Check if terraform is available
 	tfBinary := "terraform"
 	if _, err := exec.LookPath(tfBinary); err != nil {
 		tfBinary = "tofu"
@@ -23,7 +26,7 @@ func TestValidateGeneratedHCL(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// Write a minimal providers.tf
+	// Write providers.tf with mock credentials (no real AWS needed)
 	providersContent := []byte(`terraform {
   required_providers {
     aws = {
@@ -46,34 +49,77 @@ provider "aws" {
 		t.Fatal(err)
 	}
 
-	// Write a generated.tf that mimics post-processed output
-	generatedContent := []byte(`resource "aws_s3_bucket" "data" {
-  bucket = "my-data-bucket"
-}
+	// Simulate post-processed output by running Process on raw HCL
+	resources := []types.Resource{
+		{Type: "aws_vpc", ID: "vpc-abc123", Name: "main"},
+		{Type: "aws_subnet", ID: "subnet-def456", Name: "public"},
+	}
 
-resource "aws_vpc" "main" {
+	rawHCL := []byte(`resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 }
 
 resource "aws_subnet" "public" {
-  vpc_id     = aws_vpc.main.id
+  vpc_id     = "vpc-abc123"
   cidr_block = "10.0.1.0/24"
 }
+
+resource "aws_s3_bucket" "data" {
+  bucket = "my-data-bucket"
+}
 `)
-	if err := os.WriteFile(filepath.Join(tmpDir, "generated.tf"), generatedContent, 0644); err != nil {
+
+	names := NewNameResolver()
+	idx := NewIDIndex(resources, names)
+	pp := NewPostProcessor(graph.New(), idx)
+
+	processed, err := pp.Process(rawHCL, resources)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	// Verify the processed HCL contains references
+	result := string(processed)
+	t.Logf("Processed HCL:\n%s", result)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "generated.tf"), processed, 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write variables.tf
-	varsContent := []byte(`variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-`)
+	// Write variables.tf from post-processor
+	varsContent := pp.ExtractVariables(nil, "us-east-1")
 	if err := os.WriteFile(filepath.Join(tmpDir, "variables.tf"), varsContent, 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	// Test for_each collapse output separately
+	foreachHCL := []byte(`resource "aws_s3_bucket" "a" {
+  bucket = "data-a"
+  acl    = "private"
+}
+
+resource "aws_s3_bucket" "b" {
+  bucket = "data-b"
+  acl    = "private"
+}
+
+resource "aws_s3_bucket" "c" {
+  bucket = "data-c"
+  acl    = "private"
+}
+`)
+	foreachFile, err := hclutil.ParseFile(foreachHCL)
+	if err != nil {
+		t.Fatalf("parse foreach HCL: %v", err)
+	}
+	CollapseForEach(foreachFile)
+	collapsedBytes := hclutil.FormatFile(foreachFile)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "collapsed.tf"), collapsedBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Collapsed HCL:\n%s", string(collapsedBytes))
 
 	// Run terraform init
 	initCmd := exec.Command(tfBinary, "init")
@@ -89,5 +135,5 @@ resource "aws_subnet" "public" {
 		t.Fatalf("%s validate failed: %v\n%s", tfBinary, err, string(out))
 	}
 
-	t.Logf("%s validate passed", tfBinary)
+	t.Logf("%s validate passed on post-processed + collapsed output", tfBinary)
 }

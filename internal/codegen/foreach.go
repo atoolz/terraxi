@@ -25,6 +25,8 @@ type blockInfo struct {
 //
 // Only collapses when ALL non-varying attributes are identical across the group.
 // Resources with differing nested blocks are skipped.
+// If multiple signature groups exist for the same type, collapse is skipped
+// to avoid duplicate block labels.
 func CollapseForEach(f *hclwrite.File) {
 	byType := make(map[string][]blockInfo)
 
@@ -45,7 +47,7 @@ func CollapseForEach(f *hclwrite.File) {
 		values := make(map[string]string, len(attrs))
 		for name, attr := range attrs {
 			keys = append(keys, name)
-			values[name] = string(attr.Expr().BuildTokens(nil).Bytes())
+			values[name] = strings.TrimSpace(string(attr.Expr().BuildTokens(nil).Bytes()))
 		}
 		sort.Strings(keys)
 
@@ -57,7 +59,15 @@ func CollapseForEach(f *hclwrite.File) {
 		})
 	}
 
-	for resourceType, blocks := range byType {
+	// Sort resource types for deterministic output
+	typeKeys := make([]string, 0, len(byType))
+	for k := range byType {
+		typeKeys = append(typeKeys, k)
+	}
+	sort.Strings(typeKeys)
+
+	for _, resourceType := range typeKeys {
+		blocks := byType[resourceType]
 		if len(blocks) < 3 {
 			continue
 		}
@@ -68,17 +78,38 @@ func CollapseForEach(f *hclwrite.File) {
 			bySignature[bi.attrKeys] = append(bySignature[bi.attrKeys], bi)
 		}
 
-		for sig, group := range bySignature {
+		// Count collapsible groups for this type
+		collapsibleCount := 0
+		for _, group := range bySignature {
+			if len(group) >= 3 {
+				collapsibleCount++
+			}
+		}
+
+		// Skip if multiple groups would collapse (would create duplicate "this" labels)
+		if collapsibleCount > 1 {
+			slog.Debug("Skipping for_each collapse: multiple signature groups",
+				"type", resourceType, "groups", collapsibleCount)
+			continue
+		}
+
+		// Sort signatures for deterministic processing
+		sigKeys := make([]string, 0, len(bySignature))
+		for k := range bySignature {
+			sigKeys = append(sigKeys, k)
+		}
+		sort.Strings(sigKeys)
+
+		for _, sig := range sigKeys {
+			group := bySignature[sig]
 			if len(group) < 3 {
 				continue
 			}
 
-			// Find which attributes vary vs which are constant
 			keys := strings.Split(sig, ",")
 			varying := findVaryingAttrs(group, keys)
 
 			if len(varying) == 0 {
-				// All attributes identical, nothing to parameterize
 				continue
 			}
 
@@ -88,13 +119,11 @@ func CollapseForEach(f *hclwrite.File) {
 				"varying", varying,
 			)
 
-			// Build the for_each map
 			foreachBlock := buildForEachBlock(resourceType, group, keys, varying)
 			if foreachBlock == nil {
 				continue
 			}
 
-			// Remove original blocks and add the collapsed one
 			for _, bi := range group {
 				f.Body().RemoveBlock(bi.block)
 			}
@@ -121,29 +150,25 @@ func findVaryingAttrs(group []blockInfo, keys []string) []string {
 
 // buildForEachBlock creates a new resource block with for_each and each.value references.
 func buildForEachBlock(resourceType string, group []blockInfo, allKeys, varying []string) *hclwrite.Block {
-	// Build the for_each map: { "name1" = { attr1 = val1, ... }, "name2" = { ... } }
 	var mapEntries []string
 	for _, bi := range group {
 		var entryParts []string
 		for _, v := range varying {
-			entryParts = append(entryParts, fmt.Sprintf("    %s = %s", v, strings.TrimSpace(bi.attrValues[v])))
+			entryParts = append(entryParts, fmt.Sprintf("    %s = %s", v, bi.attrValues[v]))
 		}
 		mapEntries = append(mapEntries, fmt.Sprintf("  %q = {\n%s\n  }", bi.label, strings.Join(entryParts, "\n")))
 	}
 
 	foreachMap := fmt.Sprintf("{\n%s\n}", strings.Join(mapEntries, "\n"))
 
-	// Create the new block
 	newBlock := hclwrite.NewBlock("resource", []string{resourceType, "this"})
 	body := newBlock.Body()
 
-	// Set for_each
 	body.SetAttributeRaw("for_each", hclwrite.Tokens{
 		{Type: hclsyntax.TokenIdent, Bytes: []byte(foreachMap), SpacesBefore: 1},
 		{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
 	})
 
-	// Set constant attributes (same across all resources)
 	varyingSet := make(map[string]bool, len(varying))
 	for _, v := range varying {
 		varyingSet[v] = true
@@ -151,13 +176,11 @@ func buildForEachBlock(resourceType string, group []blockInfo, allKeys, varying 
 
 	for _, key := range allKeys {
 		if varyingSet[key] {
-			// Varying attribute: use each.value.key
 			body.SetAttributeRaw(key, hclwrite.Tokens{
 				{Type: hclsyntax.TokenIdent, Bytes: []byte(fmt.Sprintf("each.value.%s", key)), SpacesBefore: 1},
 				{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
 			})
 		} else {
-			// Constant attribute: keep the original value from the first block
 			tokens := group[0].block.Body().Attributes()[key].Expr().BuildTokens(nil)
 			body.SetAttributeRaw(key, tokens)
 		}
