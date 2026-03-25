@@ -3,7 +3,7 @@ package discovery
 import (
 	"context"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // Provider is the interface that cloud providers must implement.

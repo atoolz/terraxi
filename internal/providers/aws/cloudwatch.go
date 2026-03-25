@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 func init() {

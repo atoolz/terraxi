@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // Engine orchestrates resource discovery across providers.
@@ -36,9 +36,9 @@ func (e *Engine) Run(ctx context.Context, filter types.Filter) (*types.Discovery
 	}
 
 	var (
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, e.concurrency)
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, e.concurrency)
 	)
 
 	for _, rt := range targetTypes {

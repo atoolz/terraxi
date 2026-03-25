@@ -3,7 +3,7 @@ package graph
 import (
 	"testing"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 func TestTopologicalSort_Simple(t *testing.T) {

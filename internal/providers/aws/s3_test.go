@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 type mockS3 struct {

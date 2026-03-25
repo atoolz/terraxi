@@ -6,7 +6,7 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/ahlert/terraxi/pkg/types"
+	"github.com/atoolz/terraxi/pkg/types"
 )
 
 // Format is the output format for discovery results.
@@ -49,23 +49,23 @@ func (ow *Writer) writeJSON(result *types.DiscoveryResult) error {
 func (ow *Writer) writeTable(result *types.DiscoveryResult) error {
 	tw := tabwriter.NewWriter(ow.w, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(tw, "TYPE\tID\tNAME\tREGION\n")
-	fmt.Fprintf(tw, "----\t--\t----\t------\n")
+	_, _ = fmt.Fprintf(tw, "TYPE\tID\tNAME\tREGION\n")
+	_, _ = fmt.Fprintf(tw, "----\t--\t----\t------\n")
 
 	for _, r := range result.Resources {
 		name := r.Name
 		if name == "" {
 			name = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Type, r.ID, name, r.Region)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.Type, r.ID, name, r.Region)
 	}
 
-	fmt.Fprintf(tw, "\nTotal: %d resources discovered\n", len(result.Resources))
+	_, _ = fmt.Fprintf(tw, "\nTotal: %d resources discovered\n", len(result.Resources))
 
 	if len(result.Errors) > 0 {
-		fmt.Fprintf(tw, "\nErrors (%d):\n", len(result.Errors))
+		_, _ = fmt.Fprintf(tw, "\nErrors (%d):\n", len(result.Errors))
 		for _, e := range result.Errors {
-			fmt.Fprintf(tw, "  - %s\n", e)
+			_, _ = fmt.Fprintf(tw, "  - %s\n", e)
 		}
 	}
 

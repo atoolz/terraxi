@@ -1,21 +1,22 @@
 BINARY_NAME := terraxi
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
-GO := /usr/local/go/bin/go
 
-.PHONY: build run test lint clean install
+.PHONY: build run test lint check clean install deps fmt
 
 build:
-	$(GO) build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/terraxi
+	go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/terraxi
 
 run: build
 	./$(BINARY_NAME) $(ARGS)
 
 test:
-	$(GO) test ./... -v
+	go test ./... -v -count=1
 
 lint:
-	$(GO) vet ./...
+	golangci-lint run ./...
+
+check: test lint
 
 clean:
 	rm -f $(BINARY_NAME)
@@ -25,7 +26,7 @@ install: build
 	mv $(BINARY_NAME) $(GOPATH)/bin/ 2>/dev/null || mv $(BINARY_NAME) ~/go/bin/
 
 deps:
-	$(GO) mod tidy
+	go mod tidy
 
 fmt:
-	$(GO) fmt ./...
+	go fmt ./...
